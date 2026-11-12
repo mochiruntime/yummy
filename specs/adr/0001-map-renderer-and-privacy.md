@@ -22,7 +22,7 @@
    - Switching to Google Maps in user preferences opens an explicit privacy warning modal; only after confirmation does the SPA dynamically load `@googlemaps/js-api-loader`.
 
 3. **Geocoding & Place Autocomplete (3-Tier LAMP-Compatible Strategy):**
-   - **Tier 1 (Default — Server-Proxied + Cached):** `GET /api/geocode?q=...` proxies requests from Symfony to public **Photon** (`photon.komoot.io`) or **Nominatim** (`nominatim.openstreetmap.org`) and caches responses in MariaDB (`geocode_cache`). This prevents exposing client IP addresses to third-party geocoders and works on LAMP without Java/Elasticsearch. `GEOCODER_PROVIDER` can still point to a self-hosted Photon URL if available.
+   - **Tier 1 (Default — Server-Proxied + Cached):** `GET /api/geocode?q=...` proxies requests from Symfony to **Photon** (`photon.komoot.io`) as the primary provider (purpose-built for fast, typo-tolerant search-as-you-type autocomplete) with **Nominatim** (`nominatim.openstreetmap.org`) as an automatic/configurable fallback if Photon is unavailable. Responses are cached in MariaDB (`geocode_cache`). This prevents exposing client IP addresses to third-party geocoders and works on LAMP without Java/Elasticsearch. `GEOCODER_PROVIDER` can still point to a self-hosted Photon URL if available.
    - **Tier 2 (Always Available):** Manual pin-drop on the map + manual name/address entry (zero external network calls).
    - **Tier 3 (Opt-In):** Google Places Autocomplete, active only when `GOOGLE_MAPS_ENABLED=true` and the user has consented to Google Maps.
 

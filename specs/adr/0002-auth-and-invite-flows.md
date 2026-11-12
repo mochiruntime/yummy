@@ -23,7 +23,7 @@ We evaluated two primary models:
 
 1. **Admin Login:** Admins request a short-lived (15-minute), single-use **Email Magic Link** (`POST /api/auth/magic-link`).
 2. **Friend Onboarding:** Admins generate **one-time invite links** (`POST /api/auth/invites`) to paste into IM apps.
-3. **Invite Claim:** A friend opens the link, enters their **Display Name** and **Email**, and receives an authenticated session (`HttpOnly; Secure; SameSite=Lax` cookie). The invite token is immediately marked claimed.
+3. **Invite Claim:** A friend opens the link, enters their **Display Name** and **Email**, and receives an authenticated session (`HttpOnly; Secure; SameSite=Lax` cookie). `GET` requests to invite or magic-link URLs (such as IM link-preview auto-crawlers) never consume the token; consumption occurs strictly on explicit `POST` form submission.
 4. **Subsequent Logins (Any Device / PWA):** Friends log in on any device, browser, or installed PWA by requesting an **Email Magic Link**.
 5. **No Passkeys / No Passwords:** Passkeys and personal transfer tokens are intentionally omitted to keep the auth surface simple, auditable, and 100% open-standard.
 

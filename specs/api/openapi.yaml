@@ -287,6 +287,42 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /lists/{id}/pois/{poiId}:
+    post:
+      operationId: addPoiToList
+      tags: [Lists]
+      summary: Add a POI to a list (list owner or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: poiId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: POI added to list
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      operationId: removePoiFromList
+      tags: [Lists]
+      summary: Remove a POI from a list (list owner or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: poiId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: POI removed from list
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /pois:
     get:
       operationId: listPois
@@ -538,6 +574,9 @@ paths:
                   format: binary
                 caption:
                   type: string
+                reviewId:
+                  type: string
+                  format: uuid
                 isPublic:
                   type: boolean
                   default: false
@@ -854,11 +893,6 @@ components:
           type: number
         longitude:
           type: number
-        listIds:
-          type: array
-          items:
-            type: string
-            format: uuid
 
     VisibilityInput:
       type: object
@@ -921,6 +955,9 @@ components:
       properties:
         id:
           type: string
+          format: uuid
+        reviewId:
+          type: [string, "null"]
           format: uuid
         url:
           type: string

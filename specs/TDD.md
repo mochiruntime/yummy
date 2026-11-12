@@ -58,13 +58,13 @@ erDiagram
 | `users` | `id` (UUIDv7), `email` (unique), `display_name`, `roles` (JSON: `ROLE_ADMIN` / `ROLE_USER`), `created_at` | No password column. |
 | `invite_tokens` | `id`, `token_hash` (SHA-256, unique), `created_by_id`, `claimed_by_id` (nullable), `expires_at`, `claimed_at`, `revoked_at` | Single-use; raw token shown once to creator. |
 | `magic_link_tokens` | `id`, `user_id`, `token_hash` (SHA-256, unique), `expires_at` (15m), `used_at` | Single-use; invalidated on verification. |
-| `lists` | `id`, `name`, `slug`, `color`, `icon`, `created_by_id`, `created_at` | Shared collaborative collections/tags. |
+| `lists` | `id`, `name`, `slug`, `color`, `icon`, `owner_id`, `created_at` | Owned collections/tags; only `owner_id` (or Admin) can modify list memberships. |
 | `pois` | `id`, `name`, `description`, `address`, `location` (`POINT SRID 4326`, spatial index), `latitude`, `longitude`, `is_public` (bool, default `false`), `version` (int, optimistic lock), `created_by_id`, `created_at`, `updated_at` | Spatial index enables fast `MBRContains` bounding-box queries. |
 | `poi_lists` | `poi_id`, `list_id` | Composite PK join table. |
 | `poi_revisions` | `id`, `poi_id`, `revision_number`, `editor_id`, `changed_fields` (JSON diff + snapshot), `created_at` | Immutable audit log for wiki-style edits & reverts. |
 | `reviews` | `id`, `poi_id`, `author_id`, `rating` (1–5), `body`, `is_public` (default `false`), `created_at`, `updated_at` | One or more reviews per user/POI (configurable; default 1 per user per POI). |
 | `comments` | `id`, `poi_id`, `author_id`, `body`, `is_public` (default `false`), `created_at` | Lightweight discussion thread on a POI. |
-| `photos` | `id`, `poi_id`, `uploader_id`, `storage_key`, `mime_type`, `width`, `height`, `caption`, `is_public` (default `false`), `created_at` | EXIF/GPS stripped via PHP `imagick`/`gd` on upload. |
+| `photos` | `id`, `poi_id`, `review_id` (nullable FK), `uploader_id`, `storage_key`, `mime_type`, `width`, `height`, `caption`, `is_public` (default `false`), `created_at` | EXIF/GPS stripped via PHP `imagick`/`gd` on upload; `review_id` links review-attached photos into the unified POI gallery. |
 | `reactions` | `id`, `poi_id`, `user_id`, `emoji`, `is_public` (default `false`), `created_at` | Unique constraint on `(poi_id, user_id, emoji)`. |
 | `activity_events` | `id`, `actor_id`, `event_type`, `poi_id`, `target_type`, `target_id`, `payload` (JSON), `is_public` (denormalized), `created_at` | Indexed by `(created_at DESC)` for cursor-paginated feed. |
 | `geocode_cache` | `query_hash` (SHA-256 PK), `provider`, `response_json`, `expires_at` | Caches Photon/Nominatim results in MariaDB (e.g., 7-day TTL). |
@@ -74,8 +74,8 @@ erDiagram
 ## 3. Security, Privacy & Visibility Enforcement
 
 ### 3.1 Session & Token Security
-- Authentication uses Symfony stateful `HttpOnly; Secure; SameSite=Lax` session cookies (stored in MariaDB `sessions` table or filesystem, avoiding JWT revocation issues).
-- Both `invite_tokens` and `magic_link_tokens` store only `hash('sha256', $rawToken)`.
+- Authentication uses Symfony stateful `HttpOnly; Secure; SameSite=Lax` session cookies stored in a MariaDB `sessions` table (`PdoSessionHandler`). `SameSite=Lax` is used (rather than `Strict`) so clicking a `yummy` link from an IM app or email preserves the user's logged-in session on top-level `GET` navigations while still blocking cross-site `POST/PATCH/DELETE` CSRF requests.
+- Both `invite_tokens` and `magic_link_tokens` store only `hash('sha256', $rawToken)`. `GET` requests to invite or magic-link URLs never consume tokens (protecting against IM link-preview auto-crawlers); consumption happens strictly on explicit `POST` submission.
 - Rate limiting (Symfony RateLimiter) protects `/api/auth/magic-link` and `/api/auth/invites/{token}/claim` against brute-force and email-flooding.
 
 ### 3.2 Granular Visibility Model

@@ -31,7 +31,7 @@
 
 ### 3.1 Authentication & Invites
 - **FR-AUTH-01:** Admins authenticate by requesting an email **Magic Link** (short-lived, single-use token).
-- **FR-AUTH-02:** Admins generate **one-time invite links** (copyable for pasting into IM apps like Signal, WhatsApp, or Telegram).
+- **FR-AUTH-02:** Admins generate **one-time invite links** (copyable for pasting into IM apps like Signal, WhatsApp, or Telegram). `GET` requests to an invite or magic-link URL (e.g., from IM link-preview crawlers) must **never** consume or invalidate the token; tokens are only consumed on explicit `POST` submission.
 - **FR-AUTH-03:** A friend clicking a valid one-time invite link registers by providing a **Display Name** and **Email**; the invite token is immediately invalidated upon claim, and an authenticated session is established.
 - **FR-AUTH-04:** Subsequent logins on any device or browser use **Email Magic Links** only (no passwords, no passkeys).
 - **FR-AUTH-05:** Admins can list pending/claimed invites and revoke unused invite links.
@@ -44,14 +44,14 @@
 
 ### 3.3 POIs, Multi-List Categorization & Versioning
 - **FR-POI-01:** Authenticated members can create POIs via search autocomplete or manual map pin-drop, providing `name`, `latitude`, `longitude`, optional `address`, `description`, and initial `lists`.
-- **FR-POI-02:** A POI can belong to **multiple lists** simultaneously (e.g., `"Restaurant"` AND `"Trip to Portugal 2026"`).
+- **FR-POI-02:** A POI can belong to **multiple lists** simultaneously (e.g., `"Restaurant"` AND `"Trip to Portugal 2026"`). Lists have owners; only a list's owner (or an Admin) can add/remove POIs from that list.
 - **FR-POI-03:** Members can create, rename, color-code, and filter the map by lists.
-- **FR-POI-04:** Any authenticated member can edit an existing POI's core fields (`name`, `description`, `address`, `coordinates`, `lists`).
+- **FR-POI-04:** Any authenticated member can edit an existing POI's core fields (`name`, `description`, `address`, `coordinates`). Editing a POI cannot remove it from another user's list.
 - **FR-POI-05:** Every POI edit creates an immutable **POI Revision** (`version`, `editor`, `changed_fields`, `created_at`) using optimistic locking to prevent silent overwrites. Creators and Admins can view revision history and revert to a prior revision.
 
 ### 3.4 Reviews, Comments, Reactions & Photos
-- **FR-SOC-01:** Members (including the POI creator) can add a personal **Review** (numeric/star rating + text) to a POI.
-- **FR-SOC-02:** Members can add **Comments** and **Emoji Reactions** on POIs or reviews.
+- **FR-SOC-01:** Members (including the POI creator) can add a personal **Review** (numeric/star rating + text + optional attached photos) to a POI. Photos attached to a review are also included in the POI's unified gallery (ordered by direct POI photos first, then review photos), with optional origin labels and strict respect for visibility settings.
+- **FR-SOC-02:** Members can add **Comments** and **Emoji Reactions** on POIs or reviews (per-photo comments/reactions are omitted in v1 to avoid fragmented threads).
 - **FR-SOC-03:** Members can upload multiple **Photos** to a POI. All uploaded photos have EXIF/GPS metadata stripped server-side before storage.
 
 ### 3.5 Granular Public/Private Visibility
