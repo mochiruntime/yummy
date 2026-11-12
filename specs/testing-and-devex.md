@@ -18,18 +18,20 @@ Local development runs inside a Docker Compose-backed `.devcontainer/` so every 
 
 ## 2. Test Pyramid & Commands
 
-### 2.1 Backend (Symfony / PHP)
+All commands run from their respective monorepo subdirectories (`backend/`, `frontend/`, `e2e/`). In DevContainer/E2E setup, the initial Admin can be seeded via `INITIAL_ADMIN_EMAIL` in `.env` or `php bin/console app:user:create-admin`.
+
+### 2.1 Backend (`backend/` — Symfony / PHP)
 - **Static Analysis:** `vendor/bin/phpstan analyse` (level 8 target).
 - **Unit & Integration Tests:** `php bin/phpunit`
   - Uses a dedicated test database (`yummy_test`) in MariaDB.
   - Covers Doctrine spatial queries, optimistic locking (`409 Conflict`), revision diffs/reverts, EXIF stripping, and strict `Guest` vs `Member` visibility invariants.
 
-### 2.2 Frontend (React / TypeScript)
+### 2.2 Frontend (`frontend/` — React / TypeScript)
 - **Typecheck & Lint:** `npm run typecheck && npm run lint`
 - **Unit & Component Tests:** `npx vitest run` (React Testing Library)
   - Covers multi-list filter state, bottom-sheet interactions, visibility badge/warning logic, and zero-preload guarantee for Google Maps SDK.
 
-### 2.3 End-to-End (Playwright)
+### 2.3 End-to-End (`e2e/` — Playwright)
 - **Command:** `npx playwright test`
 - **Browsers:** Desktop Chromium + Mobile WebKit (iOS PWA viewport emulation).
 - **Critical E2E Journeys:**

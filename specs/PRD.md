@@ -35,6 +35,7 @@
 - **FR-AUTH-03:** A friend clicking a valid one-time invite link registers by providing a **Display Name** and **Email**; the invite token is immediately invalidated upon claim, and an authenticated session is established.
 - **FR-AUTH-04:** Subsequent logins on any device or browser use **Email Magic Links** only (no passwords, no passkeys).
 - **FR-AUTH-05:** Admins can list pending/claimed invites and revoke unused invite links.
+- **FR-AUTH-06 (First-Admin Bootstrap):** Fresh instances support bootstrapping the initial Admin via environment config (`INITIAL_ADMIN_EMAIL` + optional `INITIAL_ADMIN_NAME` in `.env`) **and/or** via Symfony CLI (`php bin/console app:user:create-admin <email> <displayName>`). When zero Admins exist in the database, requesting a magic link for `INITIAL_ADMIN_EMAIL` provisions that Admin account and dispatches the verification magic link; once an Admin exists, the env bootstrap is a no-op.
 
 ### 3.2 Map Rendering & Geocoding
 - **FR-MAP-01:** Default map renderer is **MapLibre GL JS** using privacy-friendly vector tiles (**OpenFreeMap** by default, or self-hosted **Protomaps `.pmtiles`** via configuration).
@@ -53,6 +54,7 @@
 - **FR-SOC-01:** Members (including the POI creator) can add a personal **Review** (numeric/star rating + text + optional attached photos) to a POI. Photos attached to a review are also included in the POI's unified gallery (ordered by direct POI photos first, then review photos), with optional origin labels and strict respect for visibility settings.
 - **FR-SOC-02:** Members can add **Comments** and **Emoji Reactions** on POIs or reviews (per-photo comments/reactions are omitted in v1 to avoid fragmented threads).
 - **FR-SOC-03:** Members can upload multiple **Photos** to a POI. All uploaded photos have EXIF/GPS metadata stripped server-side before storage.
+- **FR-SOC-04:** Creators/uploaders (and Admins) can delete their own POIs, lists, reviews, comments, and photos.
 
 ### 3.5 Granular Public/Private Visibility
 - **FR-VIS-01:** Every newly created POI, review, comment, reaction, and photo defaults to `is_public = false` (visible only to logged-in members).

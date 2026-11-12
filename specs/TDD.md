@@ -73,8 +73,9 @@ erDiagram
 
 ## 3. Security, Privacy & Visibility Enforcement
 
-### 3.1 Session & Token Security
-- Authentication uses Symfony stateful `HttpOnly; Secure; SameSite=Lax` session cookies stored in a MariaDB `sessions` table (`PdoSessionHandler`). `SameSite=Lax` is used (rather than `Strict`) so clicking a `yummy` link from an IM app or email preserves the user's logged-in session on top-level `GET` navigations while still blocking cross-site `POST/PATCH/DELETE` CSRF requests.
+### 3.1 Session, Bootstrap & Token Security
+- **First-Admin Bootstrap:** Fresh instances support `.env` config (`INITIAL_ADMIN_EMAIL`, optional `INITIAL_ADMIN_NAME`) active *only* when `COUNT(admins) == 0` (verified via magic link), as well as `php bin/console app:user:create-admin <email> <displayName>`.
+- **Session & CSRF:** Authentication uses Symfony stateful `HttpOnly; Secure; SameSite=Lax` session cookies stored in a MariaDB `sessions` table (`PdoSessionHandler`). `SameSite=Lax` is used (rather than `Strict`) so clicking a `yummy` link from an IM app or email preserves the user's logged-in session on top-level `GET` navigations while still blocking cross-site `POST/PATCH/DELETE` CSRF requests. State-changing routes (`POST`/`PATCH`/`DELETE`) additionally enforce double-submit CSRF protection via an `XSRF-TOKEN` cookie (refreshed on `GET /api/auth/csrf`) echoed in the `X-XSRF-TOKEN` request header.
 - Both `invite_tokens` and `magic_link_tokens` store only `hash('sha256', $rawToken)`. `GET` requests to invite or magic-link URLs never consume tokens (protecting against IM link-preview auto-crawlers); consumption happens strictly on explicit `POST` submission.
 - Rate limiting (Symfony RateLimiter) protects `/api/auth/magic-link` and `/api/auth/invites/{token}/claim` against brute-force and email-flooding.
 
@@ -84,7 +85,8 @@ Every query for POIs, reviews, comments, photos, reactions, and activity events 
 - **Unauthenticated (`Guest`):**
   - `POI` queries enforce `poi.is_public = true`.
   - Child item queries (`Review`, `Comment`, `Photo`, `Reaction`, `ActivityEvent`) enforce `item.is_public = true AND poi.is_public = true`.
-- **Media Access Control:** Photos are **not** served directly from an unauthenticated `/uploads/` web directory. They are served via `GET /api/photos/{id}/file` (or signed/proxied `X-Sendfile` / `BinaryFileResponse`) so Symfony enforces the exact `poi.is_public && photo.is_public` check before streaming bytes.
+  - **Review-Attached Photos:** When a photo has `review_id != null`, Guests only see it when `poi.is_public = true AND review.is_public = true AND photo.is_public = true`.
+- **Media Access Control:** Photos are **not** served directly from an unauthenticated `/uploads/` web directory. They are served via `GET /api/photos/{id}/file` (or signed/proxied `X-Sendfile` / `BinaryFileResponse`) so Symfony enforces the exact visibility check before streaming bytes.
 
 ### 3.3 Photo EXIF/GPS Stripping
 - On upload (`POST /api/pois/{id}/photos`), Symfony validates MIME type (`image/jpeg`, `image/png`, `image/webp`) and max file size, strips all EXIF/IPTC/XMP metadata (including GPS coordinates and camera serials) via `imagick` (`stripImage()`) or `gd` re-encoding, generates a display-sized variant (max 2048px) and thumbnail (400px), and stores them under a random UUID key.
@@ -107,3 +109,16 @@ The React SPA fetches `GET /api/config` on boot before initializing any map rend
 
 - If `googleMapsEnabled` is `false`, the Google Maps toggle and Places Autocomplete UI are completely omitted.
 - If `pmtilesUrl` is set (e.g., `/tiles/region.pmtiles`), MapLibre initializes the `pmtiles` protocol handler for 100% self-hosted tiles.
+
+---
+
+## 5. Monorepo Directory Layout
+
+```text
+yummy/
+├── .devcontainer/     # DevContainer + compose.yaml (app, mariadb, mailpit)
+├── backend/           # Symfony API (PHP 8.3+, Doctrine, PHPUnit, PHPStan)
+├── frontend/          # React + TypeScript + Vite PWA + Tailwind v4 + Vitest
+├── e2e/               # Playwright E2E suite (Chromium + WebKit mobile)
+└── specs/             # Committed PRD, TDD, ADRs, OpenAPI, UX & testing specs
+```

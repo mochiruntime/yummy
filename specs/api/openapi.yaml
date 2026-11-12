@@ -39,6 +39,18 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /auth/csrf:
+    get:
+      operationId: getCsrfToken
+      tags: [Auth]
+      security: []
+      summary: Issue or refresh XSRF-TOKEN cookie for SPA double-submit CSRF protection
+      responses:
+        "204":
+          description: XSRF-TOKEN cookie set
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /auth/me:
     get:
       operationId: getCurrentUser
@@ -287,6 +299,40 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /lists/{id}:
+    patch:
+      operationId: updatePoiList
+      tags: [Lists]
+      summary: Rename or restyle a list (list owner or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PoiListInput"
+      responses:
+        "200":
+          description: Updated list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoiList"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      operationId: deletePoiList
+      tags: [Lists]
+      summary: Delete a list (list owner or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: List deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /lists/{id}/pois/{poiId}:
     post:
       operationId: addPoiToList
@@ -413,6 +459,17 @@ paths:
                 $ref: "#/components/schemas/PoiDetail"
         "409":
           description: Optimistic lock conflict (stale version)
+    delete:
+      operationId: deletePoi
+      tags: [POIs]
+      summary: Delete a POI (creator or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: POI deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /pois/{id}/visibility:
     patch:
@@ -589,6 +646,91 @@ paths:
                 $ref: "#/components/schemas/Photo"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /reviews/{id}/visibility:
+    patch:
+      operationId: updateReviewVisibility
+      tags: [Social]
+      summary: Toggle isPublic on a review (author or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VisibilityInput"
+      responses:
+        "200":
+          description: Updated review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Review"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /reviews/{id}:
+    delete:
+      operationId: deleteReview
+      tags: [Social]
+      summary: Delete a review (author or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Review deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /comments/{id}/visibility:
+    patch:
+      operationId: updateCommentVisibility
+      tags: [Social]
+      summary: Toggle isPublic on a comment (author or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VisibilityInput"
+      responses:
+        "200":
+          description: Updated comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /comments/{id}:
+    delete:
+      operationId: deleteComment
+      tags: [Social]
+      summary: Delete a comment (author or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Comment deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /photos/{id}:
+    delete:
+      operationId: deletePhoto
+      tags: [Photos]
+      summary: Delete a photo (uploader or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Photo deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /photos/{id}/visibility:
     patch:
@@ -783,12 +925,17 @@ components:
       allOf:
         - $ref: "#/components/schemas/PoiListInput"
         - type: object
-          required: [id, slug]
+          required: [id, slug, ownerId, ownerName]
           properties:
             id:
               type: string
               format: uuid
             slug:
+              type: string
+            ownerId:
+              type: string
+              format: uuid
+            ownerName:
               type: string
 
     PoiSummary:
@@ -819,7 +966,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/PoiSummary"
         - type: object
-          required: [description, createdBy, createdAt, updatedAt, reviews, photos, reactions]
+          required: [description, createdBy, createdAt, updatedAt, reviews, comments, photos, reactions]
           properties:
             description:
               type: [string, "null"]
@@ -840,6 +987,10 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/Review"
+            comments:
+              type: array
+              items:
+                $ref: "#/components/schemas/Comment"
             photos:
               type: array
               items:
@@ -848,11 +999,14 @@ components:
               type: array
               items:
                 type: object
+                required: [emoji, count, reactedByMe]
                 properties:
                   emoji:
                     type: string
                   count:
                     type: integer
+                  reactedByMe:
+                    type: boolean
 
     PoiCreateInput:
       type: object
@@ -943,6 +1097,23 @@ components:
           type: integer
         body:
           type: [string, "null"]
+        isPublic:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    Comment:
+      type: object
+      required: [id, authorName, body, isPublic, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        authorName:
+          type: string
+        body:
+          type: string
         isPublic:
           type: boolean
         createdAt:
