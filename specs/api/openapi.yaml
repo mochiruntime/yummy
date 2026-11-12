@@ -1,0 +1,958 @@
+openapi: 3.1.0
+info:
+  title: yummy API
+  version: 0.1.0
+  description: >
+    Open-source collaborative mapping API for dropping, sharing, and organizing custom POIs.
+    All endpoints enforce privacy-by-default visibility rules.
+servers:
+  - url: /api
+    description: Same-origin API prefix
+
+security:
+  - sessionCookie: []
+
+tags:
+  - name: Config
+  - name: Auth
+  - name: Geocode
+  - name: Lists
+  - name: POIs
+  - name: Social
+  - name: Photos
+  - name: Feed
+
+paths:
+  /config:
+    get:
+      operationId: getAppConfig
+      tags: [Config]
+      security: []
+      summary: Public bootstrap configuration
+      responses:
+        "200":
+          description: Instance configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppConfig"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [Auth]
+      summary: Current authenticated user (or 401 if guest)
+      responses:
+        "200":
+          description: Authenticated user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/magic-link:
+    post:
+      operationId: requestMagicLink
+      tags: [Auth]
+      security: []
+      summary: Request an email magic link for an existing user or admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "202":
+          description: Magic link dispatched if account exists (uniform response to prevent enumeration)
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/magic-link/verify:
+    post:
+      operationId: verifyMagicLink
+      tags: [Auth]
+      security: []
+      summary: Verify a magic-link token and establish a session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Authenticated session established
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /auth/invites:
+    get:
+      operationId: listInvites
+      tags: [Auth]
+      summary: List invite tokens (Admin only)
+      responses:
+        "200":
+          description: List of invites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InviteSummary"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createInvite
+      tags: [Auth]
+      summary: Create a one-time friend invite link (Admin only)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expiresInHours:
+                  type: integer
+                  default: 168
+      responses:
+        "201":
+          description: Created one-time invite (raw token returned once)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, inviteUrl, expiresAt]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  inviteUrl:
+                    type: string
+                    format: uri
+                  expiresAt:
+                    type: string
+                    format: date-time
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /auth/invites/{id}:
+    delete:
+      operationId: revokeInvite
+      tags: [Auth]
+      summary: Revoke an unused invite token (Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Invite revoked
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /auth/invites/{token}/claim:
+    post:
+      operationId: claimInvite
+      tags: [Auth]
+      security: []
+      summary: Claim a one-time invite link with display name and email
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName, email]
+              properties:
+                displayName:
+                  type: string
+                  minLength: 2
+                  maxLength: 60
+                email:
+                  type: string
+                  format: email
+      responses:
+        "201":
+          description: User registered and session cookie issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [Auth]
+      summary: Destroy current session
+      responses:
+        "204":
+          description: Logged out
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /geocode:
+    get:
+      operationId: searchGeocode
+      tags: [Geocode]
+      summary: Server-proxied, cached place/address autocomplete (authenticated only)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+        - name: lat
+          in: query
+          schema:
+            type: number
+        - name: lng
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Geocoded place suggestions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GeocodeResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /lists:
+    get:
+      operationId: listPoiLists
+      tags: [Lists]
+      security:
+        - {}
+        - sessionCookie: []
+      summary: List all POI categories/lists visible to the caller
+      responses:
+        "200":
+          description: List collection
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PoiList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createPoiList
+      tags: [Lists]
+      summary: Create a new list/category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PoiListInput"
+      responses:
+        "201":
+          description: List created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoiList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /pois:
+    get:
+      operationId: listPois
+      tags: [POIs]
+      security:
+        - {}
+        - sessionCookie: []
+      summary: Query POIs (filtered by bounding box, lists, and visibility)
+      parameters:
+        - name: bbox
+          in: query
+          description: "minLng,minLat,maxLng,maxLat"
+          schema:
+            type: string
+        - name: listIds
+          in: query
+          schema:
+            type: string
+            description: Comma-separated list UUIDs
+      responses:
+        "200":
+          description: Matching POIs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PoiSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createPoi
+      tags: [POIs]
+      summary: Create a new POI (defaults to isPublic=false)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PoiCreateInput"
+      responses:
+        "201":
+          description: Created POI
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoiDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /pois/{id}:
+    get:
+      operationId: getPoi
+      tags: [POIs]
+      security:
+        - {}
+        - sessionCookie: []
+      summary: Get full POI details (respecting parent-child visibility)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: POI details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoiDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updatePoi
+      tags: [POIs]
+      summary: Update a POI (creates a PoiRevision; requires matching version)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PoiUpdateInput"
+      responses:
+        "200":
+          description: Updated POI
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoiDetail"
+        "409":
+          description: Optimistic lock conflict (stale version)
+
+  /pois/{id}/visibility:
+    patch:
+      operationId: updatePoiVisibility
+      tags: [POIs]
+      summary: Toggle POI isPublic flag (creator or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VisibilityInput"
+      responses:
+        "200":
+          description: Updated visibility
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoiSummary"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /pois/{id}/revisions:
+    get:
+      operationId: listPoiRevisions
+      tags: [POIs]
+      summary: List revision history for a POI
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Revision history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PoiRevision"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /pois/{id}/revisions/{revisionNumber}/revert:
+    post:
+      operationId: revertPoiRevision
+      tags: [POIs]
+      summary: Revert POI to a prior revision (creator or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: revisionNumber
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Reverted POI (new forward revision created)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoiDetail"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /pois/{id}/reviews:
+    post:
+      operationId: addPoiReview
+      tags: [Social]
+      summary: Add a review to a POI (defaults to isPublic=false)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewInput"
+      responses:
+        "201":
+          description: Created review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Review"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /pois/{id}/comments:
+    post:
+      operationId: addPoiComment
+      tags: [Social]
+      summary: Add a comment to a POI (defaults to isPublic=false)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+                isPublic:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: Created comment
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /pois/{id}/reactions:
+    post:
+      operationId: togglePoiReaction
+      tags: [Social]
+      summary: Toggle an emoji reaction on a POI
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [emoji]
+              properties:
+                emoji:
+                  type: string
+                  maxLength: 16
+                isPublic:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: Reaction toggled
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /pois/{id}/photos:
+    post:
+      operationId: uploadPoiPhoto
+      tags: [Photos]
+      summary: Upload a photo (EXIF/GPS stripped server-side; defaults to isPublic=false)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                caption:
+                  type: string
+                isPublic:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: Uploaded photo metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /photos/{id}/visibility:
+    patch:
+      operationId: updatePhotoVisibility
+      tags: [Photos]
+      summary: Toggle isPublic on a single photo (uploader or Admin only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VisibilityInput"
+      responses:
+        "200":
+          description: Updated photo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photo"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /photos/{id}/file:
+    get:
+      operationId: getPhotoFile
+      tags: [Photos]
+      security:
+        - {}
+        - sessionCookie: []
+      summary: Stream EXIF-stripped photo bytes (enforces parent-child visibility)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: size
+          in: query
+          schema:
+            type: string
+            enum: [thumb, full]
+            default: full
+      responses:
+        "200":
+          description: Image binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /feed:
+    get:
+      operationId: getActivityFeed
+      tags: [Feed]
+      security:
+        - {}
+        - sessionCookie: []
+      summary: Cursor-paginated activity feed (filtered by visibility)
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 30
+            maximum: 100
+      responses:
+        "200":
+          description: Activity events page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ActivityEvent"
+                  nextCursor:
+                    type: [string, "null"]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: PHPSESSID
+
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Invalid request input
+    Unauthorized:
+      description: Authentication required
+    Forbidden:
+      description: Insufficient permissions
+    NotFound:
+      description: Resource not found or not visible to caller
+    RateLimited:
+      description: Too many requests
+    ServerError:
+      description: Internal server error
+
+  schemas:
+    AppConfig:
+      type: object
+      required: [googleMapsEnabled, defaultMapStyleUrl, geocoderProvider, publicBrowsingEnabled]
+      properties:
+        googleMapsEnabled:
+          type: boolean
+        googleMapsApiKey:
+          type: [string, "null"]
+        defaultMapStyleUrl:
+          type: string
+        pmtilesUrl:
+          type: [string, "null"]
+        geocoderProvider:
+          type: string
+          enum: [photon, nominatim, none]
+        publicBrowsingEnabled:
+          type: boolean
+
+    User:
+      type: object
+      required: [id, displayName, email, roles]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+        roles:
+          type: array
+          items:
+            type: string
+
+    InviteSummary:
+      type: object
+      required: [id, createdAt, expiresAt, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, claimed, revoked, expired]
+
+    GeocodeResult:
+      type: object
+      required: [label, latitude, longitude]
+      properties:
+        label:
+          type: string
+        address:
+          type: [string, "null"]
+        latitude:
+          type: number
+        longitude:
+          type: number
+
+    PoiListInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        color:
+          type: string
+        icon:
+          type: string
+
+    PoiList:
+      allOf:
+        - $ref: "#/components/schemas/PoiListInput"
+        - type: object
+          required: [id, slug]
+          properties:
+            id:
+              type: string
+              format: uuid
+            slug:
+              type: string
+
+    PoiSummary:
+      type: object
+      required: [id, name, latitude, longitude, isPublic, version, lists]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        address:
+          type: [string, "null"]
+        isPublic:
+          type: boolean
+        version:
+          type: integer
+        lists:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoiList"
+
+    PoiDetail:
+      allOf:
+        - $ref: "#/components/schemas/PoiSummary"
+        - type: object
+          required: [description, createdBy, createdAt, updatedAt, reviews, photos, reactions]
+          properties:
+            description:
+              type: [string, "null"]
+            createdBy:
+              type: object
+              properties:
+                id:
+                  type: string
+                displayName:
+                  type: string
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+            reviews:
+              type: array
+              items:
+                $ref: "#/components/schemas/Review"
+            photos:
+              type: array
+              items:
+                $ref: "#/components/schemas/Photo"
+            reactions:
+              type: array
+              items:
+                type: object
+                properties:
+                  emoji:
+                    type: string
+                  count:
+                    type: integer
+
+    PoiCreateInput:
+      type: object
+      required: [name, latitude, longitude]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        address:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        listIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        isPublic:
+          type: boolean
+          default: false
+
+    PoiUpdateInput:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        address:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        listIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    VisibilityInput:
+      type: object
+      required: [isPublic]
+      properties:
+        isPublic:
+          type: boolean
+
+    PoiRevision:
+      type: object
+      required: [revisionNumber, editorName, changedFields, createdAt]
+      properties:
+        revisionNumber:
+          type: integer
+        editorName:
+          type: string
+        changedFields:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    ReviewInput:
+      type: object
+      required: [rating]
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        body:
+          type: string
+        isPublic:
+          type: boolean
+          default: false
+
+    Review:
+      type: object
+      required: [id, authorName, rating, isPublic, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        authorName:
+          type: string
+        rating:
+          type: integer
+        body:
+          type: [string, "null"]
+        isPublic:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    Photo:
+      type: object
+      required: [id, url, thumbUrl, isPublic, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        thumbUrl:
+          type: string
+        caption:
+          type: [string, "null"]
+        isPublic:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    ActivityEvent:
+      type: object
+      required: [id, eventType, actorName, poiId, poiName, isPublic, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          enum: [poi.created, poi.edited, review.added, comment.added, photo.added, reaction.added]
+        actorName:
+          type: string
+        poiId:
+          type: string
+          format: uuid
+        poiName:
+          type: string
+        isPublic:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
