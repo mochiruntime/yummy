@@ -1,7 +1,8 @@
 FROM mcr.microsoft.com/devcontainers/php:1-8.3-bookworm
 
 # Install PHP extensions required by Symfony, MariaDB, and EXIF-stripped image processing
-RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
+RUN rm -f /etc/apt/sources.list.d/yarn.list \
+    && apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get install -y --no-install-recommends \
         libicu-dev \
         libzip-dev \
