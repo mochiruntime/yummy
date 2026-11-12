@@ -1,11 +1,19 @@
 security:
     providers:
-        users_in_memory: { memory: null }
+        app_user_provider:
+            entity:
+                class: App\Entity\User
+                property: email
+
     firewalls:
         dev:
             pattern: ^/(_(profiler|wdt)|css|images|js)/
             security: false
         main:
             lazy: true
-            provider: users_in_memory
+            provider: app_user_provider
+            custom_authenticators:
+                - App\Security\MagicLinkAuthenticator
+            entry_point: App\Security\ApiAuthenticationEntryPoint
+
     access_control: []

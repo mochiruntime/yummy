@@ -1,0 +1,10 @@
+framework:
+    rate_limiter:
+        magic_link_request:
+            policy: sliding_window
+            limit: 5
+            interval: '15 minutes'
+        invite_claim:
+            policy: sliding_window
+            limit: 10
+            interval: '15 minutes'
