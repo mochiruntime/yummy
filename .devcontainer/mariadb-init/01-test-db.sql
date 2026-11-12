@@ -1,0 +1,3 @@
+CREATE DATABASE IF NOT EXISTS `yummy_test`;
+GRANT ALL PRIVILEGES ON `yummy_test`.* TO 'yummy'@'%';
+FLUSH PRIVILEGES;

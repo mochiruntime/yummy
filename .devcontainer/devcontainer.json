@@ -1,0 +1,25 @@
+{
+  "name": "yummy-dev",
+  "dockerComposeFile": "compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/yummy",
+  "forwardPorts": [8000, 5173, 8025, 3306],
+  "portsAttributes": {
+    "8000": { "label": "Symfony API" },
+    "5173": { "label": "Vite React PWA" },
+    "8025": { "label": "Mailpit UI" },
+    "3306": { "label": "MariaDB" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "bmewburn.vscode-intelephense-client",
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "esbenp.prettier-vscode",
+        "ms-playwright.playwright"
+      ]
+    }
+  },
+  "remoteUser": "vscode"
+}

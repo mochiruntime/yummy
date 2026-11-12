@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+:root {
+  --surface-primary: #ffffff;
+  --surface-overlay: rgba(255, 255, 255, 0.9);
+  --text-primary: #111827;
+  --text-muted: #6b7280;
+  --accent-brand: #e11d48;
+  --vis-private: #4f46e5;
+  --vis-public: #059669;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-primary: #121417;
+    --surface-overlay: rgba(18, 20, 23, 0.88);
+    --text-primary: #f3f4f6;
+    --text-muted: #9ca3af;
+    --accent-brand: #fb7185;
+    --vis-private: #818cf8;
+    --vis-public: #34d399;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
