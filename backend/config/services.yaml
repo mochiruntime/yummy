@@ -1,6 +1,12 @@
 parameters:
     app.mailer_sender: '%env(string:default::APP_MAILER_SENDER)%'
     app.frontend_url: '%env(string:default::APP_FRONTEND_URL)%'
+    app.google_maps_enabled: '%env(bool:default::GOOGLE_MAPS_ENABLED)%'
+    app.google_maps_api_key: '%env(string:default::GOOGLE_MAPS_API_KEY)%'
+    app.default_map_style_url: '%env(string:default::DEFAULT_MAP_STYLE_URL)%'
+    app.pmtiles_url: '%env(string:default::PMTILES_URL)%'
+    app.geocoder_provider: '%env(string:default::GEOCODER_PROVIDER)%'
+    app.public_browsing_enabled: '%env(bool:default::PUBLIC_BROWSING_ENABLED)%'
 
 services:
     _defaults:
@@ -9,6 +15,12 @@ services:
         bind:
             string $appMailerSender: '%app.mailer_sender%'
             string $appFrontendUrl: '%app.frontend_url%'
+            bool $googleMapsEnabled: '%app.google_maps_enabled%'
+            string $googleMapsApiKey: '%app.google_maps_api_key%'
+            string $defaultMapStyleUrl: '%app.default_map_style_url%'
+            string $pmtilesUrl: '%app.pmtiles_url%'
+            string $geocoderProvider: '%app.geocoder_provider%'
+            bool $publicBrowsingEnabled: '%app.public_browsing_enabled%'
 
     App\:
         resource: '../src/'

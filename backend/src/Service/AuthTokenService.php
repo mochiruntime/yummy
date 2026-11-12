@@ -10,6 +10,7 @@ use App\Entity\User;
 use App\Repository\InviteTokenRepository;
 use App\Repository\MagicLinkTokenRepository;
 use App\Repository\UserRepository;
+use App\Routing\FrontendUrlGenerator;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
@@ -33,8 +34,8 @@ final class AuthTokenService
         private readonly InviteTokenRepository $invites,
         private readonly MagicLinkTokenRepository $magicLinks,
         private readonly MailerInterface $mailer,
+        private readonly FrontendUrlGenerator $urlGenerator,
         private readonly string $appMailerSender,
-        private readonly string $appFrontendUrl,
     ) {
     }
 
@@ -71,7 +72,7 @@ final class AuthTokenService
         $this->em->persist($magicLink);
         $this->em->flush();
 
-        $loginUrl = rtrim($this->appFrontendUrl, '/').'/magic-link/'.$rawToken;
+        $loginUrl = $this->urlGenerator->generateMagicLinkUrl($rawToken);
 
         $message = (new Email())
             ->from($this->appMailerSender)
@@ -116,7 +117,7 @@ final class AuthTokenService
         $this->em->persist($invite);
         $this->em->flush();
 
-        $inviteUrl = rtrim($this->appFrontendUrl, '/').'/join/'.$rawToken;
+        $inviteUrl = $this->urlGenerator->generateInviteUrl($rawToken);
 
         return [
             'invite' => $invite,

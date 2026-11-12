@@ -9,6 +9,8 @@ use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
+ * Repository for querying and managing User entities.
+ *
  * @extends ServiceEntityRepository<User>
  */
 class UserRepository extends ServiceEntityRepository
@@ -18,11 +20,19 @@ class UserRepository extends ServiceEntityRepository
         parent::__construct($registry, User::class);
     }
 
+    /**
+     * Finds a user by normalized lowercase email address.
+     */
     public function findOneByEmail(string $email): ?User
     {
         return $this->findOneBy(['email' => mb_strtolower(trim($email))]);
     }
 
+    /**
+     * Counts the total number of users with ROLE_ADMIN.
+     *
+     * Used by AuthTokenService to determine whether initial admin bootstrap is permitted.
+     */
     public function countAdmins(): int
     {
         return (int) $this->createQueryBuilder('u')

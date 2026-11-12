@@ -8,21 +8,39 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 
+/**
+ * Exposes non-sensitive instance bootstrap configuration to the frontend SPA.
+ *
+ * All settings are injected via Symfony DI parameter binding rather than
+ * reading superglobals directly.
+ */
 final class ConfigController extends AbstractController
 {
+    public function __construct(
+        private readonly bool $googleMapsEnabled,
+        private readonly string $googleMapsApiKey,
+        private readonly string $defaultMapStyleUrl,
+        private readonly string $pmtilesUrl,
+        private readonly string $geocoderProvider,
+        private readonly bool $publicBrowsingEnabled,
+    ) {
+    }
+
+    /**
+     * Bootstrap configuration endpoint fetched by the React SPA before map initialization.
+     */
     #[Route('/api/config', name: 'api_config', methods: ['GET'])]
     public function __invoke(): JsonResponse
     {
-        $googleEnabled = filter_var($_ENV['GOOGLE_MAPS_ENABLED'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
-        $pmtilesUrl = trim((string) ($_ENV['PMTILES_URL'] ?? ''));
+        $pmtiles = trim($this->pmtilesUrl);
 
         return $this->json([
-            'googleMapsEnabled' => $googleEnabled,
-            'googleMapsApiKey' => $googleEnabled ? ($_ENV['GOOGLE_MAPS_API_KEY'] ?? null) : null,
-            'defaultMapStyleUrl' => (string) ($_ENV['DEFAULT_MAP_STYLE_URL'] ?? 'https://tiles.openfreemap.org/styles/liberty'),
-            'pmtilesUrl' => $pmtilesUrl !== '' ? $pmtilesUrl : null,
-            'geocoderProvider' => (string) ($_ENV['GEOCODER_PROVIDER'] ?? 'photon'),
-            'publicBrowsingEnabled' => filter_var($_ENV['PUBLIC_BROWSING_ENABLED'] ?? 'true', FILTER_VALIDATE_BOOLEAN),
+            'googleMapsEnabled' => $this->googleMapsEnabled,
+            'googleMapsApiKey' => $this->googleMapsEnabled && $this->googleMapsApiKey !== '' ? $this->googleMapsApiKey : null,
+            'defaultMapStyleUrl' => $this->defaultMapStyleUrl,
+            'pmtilesUrl' => $pmtiles !== '' ? $pmtiles : null,
+            'geocoderProvider' => $this->geocoderProvider,
+            'publicBrowsingEnabled' => $this->publicBrowsingEnabled,
         ]);
     }
 }

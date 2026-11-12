@@ -9,6 +9,8 @@ use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
+ * Repository for querying and managing InviteToken entities.
+ *
  * @extends ServiceEntityRepository<InviteToken>
  */
 class InviteTokenRepository extends ServiceEntityRepository
@@ -18,12 +20,17 @@ class InviteTokenRepository extends ServiceEntityRepository
         parent::__construct($registry, InviteToken::class);
     }
 
+    /**
+     * Looks up an invite token by hashing the provided raw token and matching token_hash.
+     */
     public function findOneByRawToken(string $rawToken): ?InviteToken
     {
         return $this->findOneBy(['tokenHash' => hash('sha256', $rawToken)]);
     }
 
     /**
+     * Returns all invites ordered by creation date descending for Admin management views.
+     *
      * @return list<InviteToken>
      */
     public function findAllOrderedByCreatedAtDesc(): array
