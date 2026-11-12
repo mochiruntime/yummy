@@ -1,9 +1,14 @@
 parameters:
+    app.mailer_sender: '%env(string:default::APP_MAILER_SENDER)%'
+    app.frontend_url: '%env(string:default::APP_FRONTEND_URL)%'
 
 services:
     _defaults:
         autowire: true
         autoconfigure: true
+        bind:
+            string $appMailerSender: '%app.mailer_sender%'
+            string $appFrontendUrl: '%app.frontend_url%'
 
     App\:
         resource: '../src/'

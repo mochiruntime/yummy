@@ -14,6 +14,15 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
 
+/**
+ * Handles cryptographically secure token lifecycle for magic links and invites.
+ *
+ * Security Model:
+ * 1. Tokens are generated using 256 bits of CSPRNG entropy via random_bytes(32).
+ * 2. Only the SHA-256 hash of the raw token is persisted to the database.
+ * 3. The raw token is exposed only to the user/recipient via email or generated URL.
+ * 4. Tokens are strictly single-use and invalidated immediately upon consumption.
+ */
 final class AuthTokenService
 {
     private const MAGIC_LINK_TTL = '+15 minutes';
@@ -24,10 +33,18 @@ final class AuthTokenService
         private readonly InviteTokenRepository $invites,
         private readonly MagicLinkTokenRepository $magicLinks,
         private readonly MailerInterface $mailer,
+        private readonly string $appMailerSender,
+        private readonly string $appFrontendUrl,
     ) {
     }
 
-    public function requestMagicLink(string $email, string $appBaseUrl): void
+    /**
+     * Generates a 15-minute single-use sign-in link and emails it to the user.
+     *
+     * If no admins exist in the instance and the requested email matches INITIAL_ADMIN_EMAIL,
+     * the initial Admin account is automatically provisioned and dispatched their verification link.
+     */
+    public function requestMagicLink(string $email): void
     {
         $normalizedEmail = mb_strtolower(trim($email));
         if ($normalizedEmail === '') {
@@ -43,6 +60,7 @@ final class AuthTokenService
             return;
         }
 
+        // Generate 256-bit cryptographically secure pseudorandom token
         $rawToken = bin2hex(random_bytes(32));
         $magicLink = new MagicLinkToken(
             $user,
@@ -53,10 +71,10 @@ final class AuthTokenService
         $this->em->persist($magicLink);
         $this->em->flush();
 
-        $loginUrl = rtrim($appBaseUrl, '/').'/magic-link/'.$rawToken;
+        $loginUrl = rtrim($this->appFrontendUrl, '/').'/magic-link/'.$rawToken;
 
         $message = (new Email())
-            ->from('noreply@yummy.local')
+            ->from($this->appMailerSender)
             ->to($user->getEmail())
             ->subject('Your yummy sign-in link')
             ->text("Hi {$user->getDisplayName()},\n\nSign in to yummy using this one-time link (valid for 15 minutes):\n\n{$loginUrl}\n");
@@ -64,6 +82,9 @@ final class AuthTokenService
         $this->mailer->send($message);
     }
 
+    /**
+     * Verifies and consumes a raw magic-link token, returning the authenticated User.
+     */
     public function consumeMagicLink(string $rawToken): ?User
     {
         $token = $this->magicLinks->findOneByRawToken($rawToken);
@@ -78,10 +99,16 @@ final class AuthTokenService
     }
 
     /**
-     * @return array{invite: InviteToken, rawToken: string}
+     * Generates a single-use friend invite token.
+     *
+     * @param User $admin          The Admin issuing the invite
+     * @param int  $expiresInHours Duration in hours before the invite expires (default 7 days)
+     *
+     * @return array{invite: InviteToken, rawToken: string, inviteUrl: string}
      */
     public function createInvite(User $admin, int $expiresInHours = 168): array
     {
+        // Generate 256-bit cryptographically secure pseudorandom token
         $rawToken = bin2hex(random_bytes(32));
         $expiresAt = new \DateTimeImmutable(sprintf('+%d hours', max(1, $expiresInHours)));
 
@@ -89,9 +116,18 @@ final class AuthTokenService
         $this->em->persist($invite);
         $this->em->flush();
 
-        return ['invite' => $invite, 'rawToken' => $rawToken];
+        $inviteUrl = rtrim($this->appFrontendUrl, '/').'/join/'.$rawToken;
+
+        return [
+            'invite' => $invite,
+            'rawToken' => $rawToken,
+            'inviteUrl' => $inviteUrl,
+        ];
     }
 
+    /**
+     * Validates an invite token and provisions a new member account.
+     */
     public function claimInvite(string $rawToken, string $displayName, string $email): ?User
     {
         $invite = $this->invites->findOneByRawToken($rawToken);
@@ -113,13 +149,18 @@ final class AuthTokenService
         return $user;
     }
 
+    /**
+     * Checks if the instance has 0 admins and matches the configured INITIAL_ADMIN_EMAIL.
+     */
     private function tryBootstrapInitialAdmin(string $normalizedEmail): ?User
     {
         $configuredAdminEmail = mb_strtolower(trim((string) ($_ENV['INITIAL_ADMIN_EMAIL'] ?? '')));
+        // Defensive constant-time string comparison to prevent side-channel timing leaks
         if ($configuredAdminEmail === '' || !hash_equals($configuredAdminEmail, $normalizedEmail)) {
             return null;
         }
 
+        // Bootstrap is only permitted when zero admins exist in the system
         if ($this->users->countAdmins() > 0) {
             return null;
         }

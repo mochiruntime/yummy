@@ -14,6 +14,12 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/**
+ * CLI command to provision or promote an initial Admin user.
+ *
+ * This command provides an explicit, out-of-band mechanism for instance owners
+ * to create the first administrative account without requiring an active browser session.
+ */
 #[AsCommand(
     name: 'app:user:create-admin',
     description: 'Create or promote an Admin user for magic-link login.',
@@ -60,6 +66,7 @@ final class CreateAdminCommand extends Command
                 return Command::SUCCESS;
             }
 
+            // Promote existing member to Admin
             $existing->setRoles([...$existing->getRoles(), 'ROLE_ADMIN']);
             $this->em->flush();
             $io->success(sprintf('Promoted existing user "%s" to Admin.', $email));
@@ -67,6 +74,7 @@ final class CreateAdminCommand extends Command
             return Command::SUCCESS;
         }
 
+        // Provision net-new Admin account
         $admin = new User($email, $displayName, ['ROLE_ADMIN', 'ROLE_USER']);
         $this->em->persist($admin);
         $this->em->flush();
