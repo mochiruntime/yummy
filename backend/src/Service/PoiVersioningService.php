@@ -11,7 +11,12 @@ use App\Repository\PoiRevisionRepository;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
- * Manages wiki-style versioning and snapshot auditing for POIs.
+ * Service managing wiki-style versioning, state snapshots, and audit history for POIs.
+ *
+ * Core architectural principles:
+ * - Immutable Revision History: Edits never overwrite past revisions. Every update saves a state snapshot.
+ * - Forward Reversion Pattern: Reverting to a previous revision creates a new revision N+1 that restores
+ *   the historical attributes rather than deleting subsequent history, preserving complete audit lineage.
  */
 final class PoiVersioningService
 {
@@ -24,7 +29,9 @@ final class PoiVersioningService
     /**
      * Records an immutable revision entry capturing updated fields.
      *
-     * @param array<string, mixed> $changedFields
+     * @param Poi                  $poi           Target POI being modified
+     * @param User                 $editor        User who made the changes
+     * @param array<string, mixed> $changedFields Dictionary of modified fields and state snapshots
      */
     public function recordRevision(Poi $poi, User $editor, array $changedFields): PoiRevision
     {
@@ -38,6 +45,12 @@ final class PoiVersioningService
 
     /**
      * Reverts a POI's attributes to match a prior revision, creating a new forward revision.
+     *
+     * @param Poi  $poi            Target POI to restore
+     * @param int  $revisionNumber Historical revision number to restore from
+     * @param User $editor         User performing the restoration
+     *
+     * @return PoiRevision|null The newly created forward revision, or null if the target revision does not exist
      */
     public function revertToRevision(Poi $poi, int $revisionNumber, User $editor): ?PoiRevision
     {
@@ -51,6 +64,7 @@ final class PoiVersioningService
             return null;
         }
 
+        // Restore historical attributes from the snapshot
         if (isset($snapshot['name']) && is_string($snapshot['name'])) {
             $poi->setName($snapshot['name']);
         }
@@ -64,8 +78,11 @@ final class PoiVersioningService
             $poi->setCoordinates((float) $snapshot['latitude'], (float) $snapshot['longitude']);
         }
 
+        // Flush POI attribute changes first so Doctrine increments the #[ORM\Version] lock counter.
+        // This ensures the forward revision record gets the newly incremented version number.
         $this->em->flush();
 
+        // Forward revert: record a new revision that captures what was restored and from which past revision
         $forwardDiff = [
             'revertedFromRevision' => $revisionNumber,
             'snapshot' => $snapshot,
@@ -79,7 +96,9 @@ final class PoiVersioningService
     }
 
     /**
-     * Generates a full snapshot representation of a POI's state.
+     * Generates a full snapshot dictionary of a POI's editable attributes.
+     *
+     * @param Poi $poi Target POI
      *
      * @return array<string, mixed>
      */

@@ -10,6 +10,8 @@ use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
+ * Doctrine repository for querying immutable audit revisions and state history of POIs.
+ *
  * @extends ServiceEntityRepository<PoiRevision>
  */
 class PoiRevisionRepository extends ServiceEntityRepository
@@ -20,6 +22,8 @@ class PoiRevisionRepository extends ServiceEntityRepository
     }
 
     /**
+     * Retrieves all recorded revisions for a given POI in reverse chronological order (newest first).
+     *
      * @return list<PoiRevision>
      */
     public function findByPoiOrderedByRevisionDesc(Poi $poi): array
@@ -27,6 +31,12 @@ class PoiRevisionRepository extends ServiceEntityRepository
         return $this->findBy(['poi' => $poi], ['revisionNumber' => 'DESC']);
     }
 
+    /**
+     * Finds a specific revision of a POI by its sequential revision number.
+     *
+     * @param Poi $poi            Target POI
+     * @param int $revisionNumber Sequential revision counter
+     */
     public function findOneByPoiAndRevision(Poi $poi, int $revisionNumber): ?PoiRevision
     {
         return $this->findOneBy(['poi' => $poi, 'revisionNumber' => $revisionNumber]);

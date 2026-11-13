@@ -22,6 +22,9 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\UniqueConstraint(name: 'uniq_magic_link_token_hash', columns: ['token_hash'])]
 class MagicLinkToken
 {
+    /**
+     * Unique identifier using time-ordered UUIDv7.
+     */
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]
     private Uuid $id;
@@ -51,6 +54,9 @@ class MagicLinkToken
     #[ORM\Column(name: 'used_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $usedAt = null;
 
+    /**
+     * Timestamp when the token was generated.
+     */
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
@@ -68,31 +74,49 @@ class MagicLinkToken
         $this->createdAt = new \DateTimeImmutable();
     }
 
+    /**
+     * Returns the UUIDv7 primary key.
+     */
     public function getId(): Uuid
     {
         return $this->id;
     }
 
+    /**
+     * Returns the target user.
+     */
     public function getUser(): User
     {
         return $this->user;
     }
 
+    /**
+     * Returns the SHA-256 hash of the raw magic link token.
+     */
     public function getTokenHash(): string
     {
         return $this->tokenHash;
     }
 
+    /**
+     * Returns the expiration datetime.
+     */
     public function getExpiresAt(): \DateTimeImmutable
     {
         return $this->expiresAt;
     }
 
+    /**
+     * Returns the timestamp when the token was consumed, or null if unused.
+     */
     public function getUsedAt(): ?\DateTimeImmutable
     {
         return $this->usedAt;
     }
 
+    /**
+     * Returns the creation timestamp.
+     */
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;

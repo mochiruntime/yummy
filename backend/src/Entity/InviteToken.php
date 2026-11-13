@@ -22,6 +22,9 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\UniqueConstraint(name: 'uniq_invite_token_hash', columns: ['token_hash'])]
 class InviteToken
 {
+    /**
+     * Unique identifier using time-ordered UUIDv7.
+     */
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]
     private Uuid $id;
@@ -64,6 +67,9 @@ class InviteToken
     #[ORM\Column(name: 'revoked_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $revokedAt = null;
 
+    /**
+     * Timestamp when the invite token was created.
+     */
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
@@ -81,41 +87,65 @@ class InviteToken
         $this->createdAt = new \DateTimeImmutable();
     }
 
+    /**
+     * Returns the UUIDv7 primary key.
+     */
     public function getId(): Uuid
     {
         return $this->id;
     }
 
+    /**
+     * Returns the SHA-256 hash of the invite token.
+     */
     public function getTokenHash(): string
     {
         return $this->tokenHash;
     }
 
+    /**
+     * Returns the Admin who created the invite.
+     */
     public function getCreatedBy(): User
     {
         return $this->createdBy;
     }
 
+    /**
+     * Returns the user who claimed this invite, or null if pending/expired/revoked.
+     */
     public function getClaimedBy(): ?User
     {
         return $this->claimedBy;
     }
 
+    /**
+     * Returns the expiration datetime.
+     */
     public function getExpiresAt(): \DateTimeImmutable
     {
         return $this->expiresAt;
     }
 
+    /**
+     * Returns the datetime when the token was claimed, or null if not yet claimed.
+     */
     public function getClaimedAt(): ?\DateTimeImmutable
     {
         return $this->claimedAt;
     }
 
+    /**
+     * Returns the datetime when the token was revoked, or null if not revoked.
+     */
     public function getRevokedAt(): ?\DateTimeImmutable
     {
         return $this->revokedAt;
     }
 
+    /**
+     * Returns the creation timestamp.
+     */
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;

@@ -9,6 +9,8 @@ use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
+ * Doctrine repository for looking up and storing cached place search autocomplete results.
+ *
  * @extends ServiceEntityRepository<GeocodeCache>
  */
 class GeocodeCacheRepository extends ServiceEntityRepository
@@ -18,10 +20,21 @@ class GeocodeCacheRepository extends ServiceEntityRepository
         parent::__construct($registry, GeocodeCache::class);
     }
 
-    public function findValid(string $queryHash, \DateTimeImmutable $now = new \DateTimeImmutable()): ?GeocodeCache
+    /**
+     * Finds a cached geocode query by its SHA-256 hash key, returning null if not found or expired.
+     *
+     * @param string                  $queryHash SHA-256 query hash
+     * @param \DateTimeImmutable|null $now       Reference time for expiration check (defaults to current time)
+     */
+    public function findValid(string $queryHash, ?\DateTimeImmutable $now = null): ?GeocodeCache
     {
         $cached = $this->find($queryHash);
-        if ($cached === null || $cached->isExpired($now)) {
+        if ($cached === null) {
+            return null;
+        }
+
+        $referenceTime = $now ?? new \DateTimeImmutable();
+        if ($cached->isExpired($referenceTime)) {
             return null;
         }
 

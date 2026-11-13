@@ -77,11 +77,17 @@ class User implements UserInterface
         $this->createdAt = new \DateTimeImmutable();
     }
 
+    /**
+     * Returns the UUIDv7 primary key.
+     */
     public function getId(): Uuid
     {
         return $this->id;
     }
 
+    /**
+     * Returns the user's normalized lowercase email address.
+     */
     public function getEmail(): string
     {
         return $this->email;
@@ -100,11 +106,17 @@ class User implements UserInterface
         return $id;
     }
 
+    /**
+     * Returns the user's public display name.
+     */
     public function getDisplayName(): string
     {
         return $this->displayName;
     }
 
+    /**
+     * Updates the user's public display name.
+     */
     public function setDisplayName(string $displayName): void
     {
         $this->displayName = trim($displayName);
@@ -121,6 +133,8 @@ class User implements UserInterface
     }
 
     /**
+     * Updates security roles, guaranteeing ROLE_USER is retained.
+     *
      * @param list<string> $roles
      */
     public function setRoles(array $roles): void
@@ -136,6 +150,9 @@ class User implements UserInterface
         return in_array('ROLE_ADMIN', $this->roles, true);
     }
 
+    /**
+     * Returns the account creation timestamp.
+     */
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
