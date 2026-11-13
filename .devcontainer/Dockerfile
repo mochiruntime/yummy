@@ -22,3 +22,6 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list \
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Configure Xdebug for coverage without remote debug client connection timeouts
+RUN echo "zend_extension=xdebug\nxdebug.mode=coverage,develop\nxdebug.start_with_request=trigger" > /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
