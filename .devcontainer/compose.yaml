@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ..:/workspaces/yummy:cached
+      - backend_vendor:/workspaces/yummy/backend/vendor
     command: sleep infinity
     environment:
       APP_ENV: dev
@@ -46,3 +47,4 @@ services:
 
 volumes:
   mariadb_data:
+  backend_vendor:
