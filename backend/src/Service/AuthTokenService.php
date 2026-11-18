@@ -11,6 +11,7 @@ use App\Repository\InviteTokenRepository;
 use App\Repository\MagicLinkTokenRepository;
 use App\Repository\UserRepository;
 use App\Routing\FrontendUrlGenerator;
+use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
@@ -88,15 +89,25 @@ final class AuthTokenService
      */
     public function consumeMagicLink(string $rawToken): ?User
     {
-        $token = $this->magicLinks->findOneByRawToken($rawToken);
-        if ($token === null || !$token->isUsable()) {
-            return null;
-        }
+        return $this->em->wrapInTransaction(function () use ($rawToken): ?User {
+            $token = $this->magicLinks->findOneByRawToken($rawToken);
+            if ($token === null) {
+                return null;
+            }
 
-        $token->markUsed();
-        $this->em->flush();
+            // Lock row for update inside the transaction to prevent concurrent double-consumption
+            $this->em->lock($token, LockMode::PESSIMISTIC_WRITE);
+            $this->em->refresh($token);
 
-        return $token->getUser();
+            if (!$token->isUsable()) {
+                return null;
+            }
+
+            $token->markUsed();
+            $this->em->flush();
+
+            return $token->getUser();
+        });
     }
 
     /**
@@ -131,23 +142,33 @@ final class AuthTokenService
      */
     public function claimInvite(string $rawToken, string $displayName, string $email): ?User
     {
-        $invite = $this->invites->findOneByRawToken($rawToken);
-        if ($invite === null || !$invite->isClaimable()) {
-            return null;
-        }
+        return $this->em->wrapInTransaction(function () use ($rawToken, $displayName, $email): ?User {
+            $invite = $this->invites->findOneByRawToken($rawToken);
+            if ($invite === null) {
+                return null;
+            }
 
-        $normalizedEmail = mb_strtolower(trim($email));
-        if ($this->users->findOneByEmail($normalizedEmail) !== null) {
-            return null;
-        }
+            // Lock row for update inside the transaction to prevent concurrent double-claim
+            $this->em->lock($invite, LockMode::PESSIMISTIC_WRITE);
+            $this->em->refresh($invite);
 
-        $user = new User($normalizedEmail, $displayName, ['ROLE_USER']);
-        $invite->markClaimed($user);
+            if (!$invite->isClaimable()) {
+                return null;
+            }
 
-        $this->em->persist($user);
-        $this->em->flush();
+            $normalizedEmail = mb_strtolower(trim($email));
+            if ($this->users->findOneByEmail($normalizedEmail) !== null) {
+                return null;
+            }
 
-        return $user;
+            $user = new User($normalizedEmail, $displayName, ['ROLE_USER']);
+            $invite->markClaimed($user);
+
+            $this->em->persist($user);
+            $this->em->flush();
+
+            return $user;
+        });
     }
 
     /**

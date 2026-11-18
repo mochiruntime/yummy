@@ -40,8 +40,6 @@ final class PhotoTest extends WebTestCase
         $imageService = static::getContainer()->get(ImageProcessingService::class);
         \assert($imageService instanceof ImageProcessingService);
         $this->imageService = $imageService;
-
-        $this->truncateTables();
     }
 
     protected function tearDown(): void
@@ -386,24 +384,5 @@ final class PhotoTest extends WebTestCase
         self::assertInstanceOf(Cookie::class, $cookie);
 
         return $cookie->getValue();
-    }
-
-    private function truncateTables(): void
-    {
-        $conn = $this->em->getConnection();
-        $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 0');
-        $conn->executeStatement('TRUNCATE TABLE photos');
-        $conn->executeStatement('TRUNCATE TABLE reactions');
-        $conn->executeStatement('TRUNCATE TABLE comments');
-        $conn->executeStatement('TRUNCATE TABLE reviews');
-        $conn->executeStatement('TRUNCATE TABLE poi_revisions');
-        $conn->executeStatement('TRUNCATE TABLE poi_lists');
-        $conn->executeStatement('TRUNCATE TABLE pois');
-        $conn->executeStatement('TRUNCATE TABLE lists');
-        $conn->executeStatement('TRUNCATE TABLE geocode_cache');
-        $conn->executeStatement('TRUNCATE TABLE magic_link_tokens');
-        $conn->executeStatement('TRUNCATE TABLE invite_tokens');
-        $conn->executeStatement('TRUNCATE TABLE users');
-        $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
     }
 }

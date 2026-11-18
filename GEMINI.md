@@ -47,7 +47,7 @@
 ## 6. Testing & Quality Requirements
 - **Coverage Target**: Maintain $\ge 90\%$ line coverage across all backend services, controllers, and entities.
 - **Meaningful State Assertions**: Tests must not merely check HTTP status codes. They must assert database state changes, entity attribute values, side effects, and concurrency conflict rejections.
-- **Database Isolation**: Tests must execute table truncation in `setUp()` with foreign key checks toggled to guarantee zero cross-test state leakage.
+- **Database Isolation**: Tests rely on `dama/doctrine-test-bundle` transaction rollbacks (configured in `phpunit.xml.dist`) to guarantee zero cross-test state leakage without slow `TRUNCATE TABLE` / `DELETE` cleanup in `setUp()`.
 - **Zero External Dependencies**: External HTTP calls must be mocked with `MockHttpClient` and synthetic fixtures so test execution is offline, fast, and deterministic.
 
 ## 7. REST API Serdes, Routing & Authorization Conventions

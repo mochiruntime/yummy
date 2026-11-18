@@ -27,8 +27,8 @@ use Symfony\Component\Uid\Uuid;
  *
  * Responsibilities:
  * - Querying all available lists ordered alphabetically.
- * - Creating lists with owner-scoped unique slugs (e.g., "best-ramen", "best-ramen-2").
- * - Updating list presentation (name, slug, color accent, icon).
+ * - Creating curated lists owned by authenticated users.
+ * - Updating list presentation (name, color accent, icon).
  * - Adding and removing POIs from a list with strict ownership/admin enforcement.
  * - Deleting lists while safely preserving attached POIs.
  */
@@ -50,22 +50,18 @@ final class PoiListController extends AbstractController
     /**
      * Creates a new curated list owned by the authenticated caller.
      *
-     * @param PoiListInputDto        $dto   Validated payload (name, color, icon)
-     * @param User                   $user  Authenticated owner
-     * @param PoiListRepository      $lists List repository for slug generation
-     * @param EntityManagerInterface $em    Doctrine entity manager
+     * @param PoiListInputDto        $dto  Validated payload (name, color, icon)
+     * @param User                   $user Authenticated owner
+     * @param EntityManagerInterface $em   Doctrine entity manager
      */
     #[Route('/api/lists', name: 'api_lists_create', methods: ['POST'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function create(
         #[MapRequestPayload] PoiListInputDto $dto,
         #[CurrentUser] User $user,
-        PoiListRepository $lists,
         EntityManagerInterface $em,
     ): JsonResponse {
-        // Generate an owner-scoped unique slug (e.g., "tokyo-2026", "tokyo-2026-2")
-        $slug = $lists->generateUniqueSlug($user, $dto->name);
-        $list = new PoiList($user, $dto->name, $slug, $dto->color, $dto->icon);
+        $list = new PoiList($user, $dto->name, $dto->color, $dto->icon);
 
         $em->persist($list);
         $em->flush();
@@ -97,10 +93,8 @@ final class PoiListController extends AbstractController
         // Authorization check: Only the owner or an instance Admin may modify list metadata
         $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $list);
 
-        // Regenerate unique slug if the list name changed
         if ($dto->name !== '' && $dto->name !== $list->getName()) {
             $list->setName($dto->name);
-            $list->setSlug($lists->generateUniqueSlug($list->getOwner(), $dto->name));
         }
 
         $list->setColor($dto->color);

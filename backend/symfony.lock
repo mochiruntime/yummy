@@ -1,4 +1,7 @@
 {
+    "dama/doctrine-test-bundle": {
+        "version": "v8.3.1"
+    },
     "doctrine/deprecations": {
         "version": "1.2",
         "recipe": {

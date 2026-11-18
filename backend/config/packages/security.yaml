@@ -16,4 +16,9 @@ security:
                 - App\Security\MagicLinkAuthenticator
             entry_point: App\Security\ApiAuthenticationEntryPoint
 
-    access_control: []
+    access_control:
+        - { path: ^/api/config$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/csrf$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/magic-link, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/invites/[^/]+/claim$, roles: PUBLIC_ACCESS }
+        - { path: ^/api, roles: PUBLIC_BROWSING_OR_MEMBER }

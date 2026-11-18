@@ -53,10 +53,10 @@ final class GeocodingService
 
         // Coordinates are rounded to 4 decimal places (~11m precision) so searches from nearby viewports share cache hits
         $hashKey = hash('sha256', sprintf('%s|%.4f|%.4f', $normalized, $lat ?? 0.0, $lng ?? 0.0));
-        $cached = $this->cacheRepo->findValid($hashKey);
-        if ($cached !== null) {
+        $existing = $this->cacheRepo->find($hashKey);
+        if ($existing instanceof GeocodeCache && !$existing->isExpired()) {
             /** @var list<array{label: string, address: ?string, latitude: float, longitude: float}> $cachedList */
-            $cachedList = array_values($cached->getResponseJson());
+            $cachedList = array_values($existing->getResponseJson());
 
             return $cachedList;
         }
@@ -71,16 +71,17 @@ final class GeocodingService
             $results = $this->queryNominatim($normalized);
         }
 
-        // Only cache non-empty results so transient upstream outages do not poison the 30-day cache
+        // Only cache non-empty results so transient upstream outages do not poison the 30-day cache.
+        // Refresh an expired row in place to avoid a PRIMARY KEY collision on query_hash.
         if ($results !== []) {
-            $entry = new GeocodeCache(
-                $hashKey,
-                $provider,
-                $results,
-                new \DateTimeImmutable(self::CACHE_TTL),
-            );
+            $expiresAt = new \DateTimeImmutable(self::CACHE_TTL);
+            if ($existing instanceof GeocodeCache) {
+                $existing->refresh($provider, $results, $expiresAt);
+            } else {
+                $entry = new GeocodeCache($hashKey, $provider, $results, $expiresAt);
+                $this->em->persist($entry);
+            }
 
-            $this->em->persist($entry);
             $this->em->flush();
         }
 

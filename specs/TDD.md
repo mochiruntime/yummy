@@ -58,7 +58,7 @@ erDiagram
 | `users` | `id` (UUIDv7), `email` (unique), `display_name`, `roles` (JSON: `ROLE_ADMIN` / `ROLE_USER`), `created_at` | No password column. |
 | `invite_tokens` | `id`, `token_hash` (SHA-256, unique), `created_by_id`, `claimed_by_id` (nullable), `expires_at`, `claimed_at`, `revoked_at` | Single-use; raw token shown once to creator. |
 | `magic_link_tokens` | `id`, `user_id`, `token_hash` (SHA-256, unique), `expires_at` (15m), `used_at` | Single-use; invalidated on verification. |
-| `lists` | `id`, `name`, `slug`, `color`, `icon`, `owner_id`, `created_at` | Owned collections/tags; only `owner_id` (or Admin) can modify list memberships. |
+| `lists` | `id`, `name`, `color`, `icon`, `owner_id`, `created_at` | Owned collections/tags; only `owner_id` (or Admin) can modify list memberships. |
 | `pois` | `id`, `name`, `description`, `address`, `location` (`POINT SRID 4326`, spatial index), `latitude`, `longitude`, `is_public` (bool, default `false`), `version` (int, optimistic lock), `created_by_id`, `created_at`, `updated_at` | Spatial index enables fast `MBRContains` bounding-box queries. |
 | `poi_lists` | `poi_id`, `list_id` | Composite PK join table. |
 | `poi_revisions` | `id`, `poi_id`, `revision_number`, `editor_id`, `changed_fields` (JSON diff + snapshot), `created_at` | Immutable audit log for wiki-style edits & reverts. |

@@ -30,8 +30,10 @@
     "symfony/yaml": "7.2.*"
   },
   "require-dev": {
+    "brianium/paratest": "^7.5,<7.6",
+    "dama/doctrine-test-bundle": "^8.3",
     "phpstan/phpstan": "^2.0",
-    "phpunit/phpunit": "^11.4",
+    "phpunit/phpunit": "^11.4,<11.5",
     "symfony/browser-kit": "7.2.*",
     "symfony/css-selector": "7.2.*",
     "symfony/phpunit-bridge": "7.2.*"
@@ -58,7 +60,11 @@
     "auto-scripts": {
       "cache:clear": "symfony-cmd",
       "assets:install %PUBLIC_DIR%": "symfony-cmd"
-    }
+    },
+    "test": "php bin/phpunit",
+    "test:parallel": "vendor/bin/paratest -p4 --functional",
+    "test:coverage": "XDEBUG_MODE=coverage php bin/phpunit --coverage-text",
+    "phpstan": "vendor/bin/phpstan analyse"
   },
   "extra": {
     "symfony": {

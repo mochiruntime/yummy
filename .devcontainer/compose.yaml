@@ -8,8 +8,9 @@ services:
     command: sleep infinity
     environment:
       APP_ENV: dev
-      DATABASE_URL: "mysql://yummy:yummy@mariadb:3306/yummy?serverVersion=11.4.0-MariaDB&charset=utf8mb4"
-      MAILER_DSN: "smtp://mailpit:1025"
+      XDEBUG_MODE: "off"
+      APP_CACHE_DIR: "/tmp/yummy-cache"
+      APP_LOG_DIR: "/tmp/yummy-log"
     depends_on:
       mariadb:
         condition: service_healthy
@@ -19,6 +20,7 @@ services:
   mariadb:
     image: mariadb:11.4
     restart: unless-stopped
+    command: --innodb-flush-log-at-trx-commit=2
     environment:
       MARIADB_ROOT_PASSWORD: root
       MARIADB_DATABASE: yummy

@@ -8,6 +8,7 @@ use App\Entity\InviteToken;
 use App\Entity\MagicLinkToken;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie;
@@ -29,7 +30,11 @@ final class AuthFlowTest extends WebTestCase
         $em = static::getContainer()->get(EntityManagerInterface::class);
         \assert($em instanceof EntityManagerInterface);
         $this->em = $em;
-        $this->truncateAuthTables();
+
+        $rateLimiterCache = static::getContainer()->get('cache.rate_limiter');
+        if ($rateLimiterCache instanceof CacheItemPoolInterface) {
+            $rateLimiterCache->clear();
+        }
     }
 
     /**
@@ -405,19 +410,5 @@ final class AuthFlowTest extends WebTestCase
         self::assertInstanceOf(Cookie::class, $cookie);
 
         return $cookie->getValue();
-    }
-
-    private function truncateAuthTables(): void
-    {
-        $conn = $this->em->getConnection();
-        $conn->executeStatement('DELETE FROM magic_link_tokens');
-        $conn->executeStatement('DELETE FROM invite_tokens');
-        $conn->executeStatement('DELETE FROM users');
-
-        // Reset rate limiter cache so tests have clean rate windows
-        $cache = static::getContainer()->get('cache.rate_limiter');
-        if ($cache instanceof \Psr\Cache\CacheItemPoolInterface) {
-            $cache->clear();
-        }
     }
 }

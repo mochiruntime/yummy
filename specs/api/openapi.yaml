@@ -955,13 +955,11 @@ components:
       allOf:
         - $ref: "#/components/schemas/PoiListInput"
         - type: object
-          required: [id, slug, ownerId, ownerName]
+          required: [id, ownerId, ownerName]
           properties:
             id:
               type: string
               format: uuid
-            slug:
-              type: string
             ownerId:
               type: string
               format: uuid

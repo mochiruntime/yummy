@@ -17,13 +17,11 @@ use Symfony\Component\Uid\Uuid;
  * Represents a collaborative list / category of POIs (e.g., "Trip to Portugal 2026", "Best Pizza", "Date Night").
  *
  * Scoping & Ownership:
- * - Each list belongs to an owner (User). Slugs are unique per owner (owner_id + slug), allowing
- *   different users to create lists with identical names (e.g., "Favorites") without collision.
+ * - Each list belongs to an owner (User).
  * - Only the list owner or an instance Admin can modify the list metadata or delete the list.
  */
 #[ORM\Entity(repositoryClass: PoiListRepository::class)]
 #[ORM\Table(name: 'lists')]
-#[ORM\UniqueConstraint(name: 'uniq_lists_owner_slug', columns: ['owner_id', 'slug'])]
 class PoiList
 {
     /**
@@ -47,13 +45,6 @@ class PoiList
     #[ORM\Column(length: 80)]
     #[Groups(['list:read', 'poi:read', 'poi:summary'])]
     private string $name;
-
-    /**
-     * URL-safe slug unique per owner (e.g., "best-ramen-in-berlin"). Max 100 characters.
-     */
-    #[ORM\Column(length: 100)]
-    #[Groups(['list:read', 'poi:read', 'poi:summary'])]
-    private string $slug;
 
     /**
      * Hexadecimal color code used for map marker accents (e.g., "#E11D48"). Max 16 characters.
@@ -90,16 +81,14 @@ class PoiList
      *
      * @param User   $owner List owner
      * @param string $name  Display name
-     * @param string $slug  Owner-scoped unique slug
      * @param string $color Hex color code (#rrggbb)
      * @param string $icon  Icon identifier string
      */
-    public function __construct(User $owner, string $name, string $slug, string $color = '#E11D48', string $icon = 'bookmark')
+    public function __construct(User $owner, string $name, string $color = '#E11D48', string $icon = 'bookmark')
     {
         $this->id = Uuid::v7();
         $this->owner = $owner;
         $this->name = trim($name);
-        $this->slug = trim($slug);
         $this->color = trim($color);
         $this->icon = trim($icon);
         $this->pois = new ArrayCollection();
@@ -156,22 +145,6 @@ class PoiList
     public function setName(string $name): void
     {
         $this->name = trim($name);
-    }
-
-    /**
-     * Returns the URL-safe slug.
-     */
-    public function getSlug(): string
-    {
-        return $this->slug;
-    }
-
-    /**
-     * Updates the URL-safe slug.
-     */
-    public function setSlug(string $slug): void
-    {
-        $this->slug = trim($slug);
     }
 
     /**

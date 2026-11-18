@@ -106,4 +106,18 @@ class GeocodeCache
     {
         return $this->expiresAt <= $now;
     }
+
+    /**
+     * Refreshes an expired cache entry in place with new upstream results and expiration.
+     *
+     * @param string                                                                                $provider     Provider identifier ("photon" or "nominatim")
+     * @param array<int, array{label: string, address: ?string, latitude: float, longitude: float}> $responseJson Formatted list of place results
+     * @param \DateTimeImmutable                                                                    $expiresAt    New expiry deadline
+     */
+    public function refresh(string $provider, array $responseJson, \DateTimeImmutable $expiresAt): void
+    {
+        $this->provider = $provider;
+        $this->responseJson = $responseJson;
+        $this->expiresAt = $expiresAt;
+    }
 }

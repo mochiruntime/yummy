@@ -27,7 +27,6 @@ final class PoiListTest extends WebTestCase
         $em = static::getContainer()->get(EntityManagerInterface::class);
         \assert($em instanceof EntityManagerInterface);
         $this->em = $em;
-        $this->truncateTables();
     }
 
     public function testListRequiresAuthForCreation(): void
@@ -45,7 +44,7 @@ final class PoiListTest extends WebTestCase
         self::assertResponseStatusCodeSame(401);
     }
 
-    public function testCreateListAndAutoGenerateSlug(): void
+    public function testCreateList(): void
     {
         $user = new User('owner@yummy.test', 'List Owner');
         $this->em->persist($user);
@@ -71,39 +70,11 @@ final class PoiListTest extends WebTestCase
         $data = json_decode((string) $this->client->getResponse()->getContent(), true);
         self::assertIsArray($data);
         self::assertSame('Best Ramen in Town!', $data['name']);
-        self::assertSame('best-ramen-in-town', $data['slug']);
+        self::assertArrayNotHasKey('slug', $data);
         self::assertSame('#ff5722', $data['color']);
         self::assertSame('ramen', $data['icon']);
         self::assertSame($user->getId()->toRfc4122(), $data['ownerId']);
         self::assertSame('List Owner', $data['ownerName']);
-    }
-
-    public function testSlugDisambiguationForSameOwner(): void
-    {
-        $user = new User('owner@yummy.test', 'List Owner');
-        $this->em->persist($user);
-        $this->em->flush();
-
-        $this->client->loginUser($user);
-        $csrf = $this->fetchCsrfToken();
-
-        for ($i = 1; $i <= 3; ++$i) {
-            $this->client->request(
-                'POST',
-                '/api/lists',
-                [],
-                [],
-                ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrf],
-                json_encode(['name' => 'Burgers'], JSON_THROW_ON_ERROR),
-            );
-            self::assertResponseStatusCodeSame(201);
-        }
-
-        $lists = $this->em->getRepository(PoiList::class)->findBy(['owner' => $user], ['createdAt' => 'ASC']);
-        self::assertCount(3, $lists);
-        self::assertSame('burgers', $lists[0]->getSlug());
-        self::assertSame('burgers-2', $lists[1]->getSlug());
-        self::assertSame('burgers-3', $lists[2]->getSlug());
     }
 
     public function testGetListsOrderedByName(): void
@@ -111,8 +82,8 @@ final class PoiListTest extends WebTestCase
         $user = new User('owner@yummy.test', 'List Owner');
         $this->em->persist($user);
 
-        $listZ = new PoiList($user, 'Zebra Cafe', 'zebra-cafe', '#333333', 'coffee');
-        $listA = new PoiList($user, 'Apple Bakery', 'apple-bakery', '#ff0000', 'bakery');
+        $listZ = new PoiList($user, 'Zebra Cafe', '#333333', 'coffee');
+        $listA = new PoiList($user, 'Apple Bakery', '#ff0000', 'bakery');
         $this->em->persist($listZ);
         $this->em->persist($listA);
         $this->em->flush();
@@ -136,7 +107,7 @@ final class PoiListTest extends WebTestCase
         $this->em->persist($other);
         $this->em->persist($admin);
 
-        $list = new PoiList($owner, 'Original Name', 'original-name', '#000000', 'pin');
+        $list = new PoiList($owner, 'Original Name', '#000000', 'pin');
         $this->em->persist($list);
         $this->em->flush();
 
@@ -174,7 +145,6 @@ final class PoiListTest extends WebTestCase
         $updated = json_decode((string) $this->client->getResponse()->getContent(), true);
         self::assertIsArray($updated);
         self::assertSame('Updated Name', $updated['name']);
-        self::assertSame('updated-name', $updated['slug']);
         self::assertSame('#123456', $updated['color']);
         self::assertSame('star', $updated['icon']);
 
@@ -199,7 +169,7 @@ final class PoiListTest extends WebTestCase
         $this->em->persist($owner);
         $this->em->persist($other);
 
-        $list = new PoiList($owner, 'To Delete', 'to-delete', '#000000', 'pin');
+        $list = new PoiList($owner, 'To Delete', '#000000', 'pin');
         $this->em->persist($list);
         $this->em->flush();
 
@@ -238,7 +208,7 @@ final class PoiListTest extends WebTestCase
         $owner = new User('owner@yummy.test', 'Owner');
         $this->em->persist($owner);
 
-        $list = new PoiList($owner, 'Desserts', 'desserts', '#ff00aa', 'ice-cream');
+        $list = new PoiList($owner, 'Desserts', '#ff00aa', 'ice-cream');
         $poi = new Poi($owner, 'Gelato Shop', 48.8584, 2.2945, 'Great pistachio gelato', '1 Rue de Paris');
         $this->em->persist($list);
         $this->em->persist($poi);
@@ -341,7 +311,7 @@ final class PoiListTest extends WebTestCase
         $this->em->persist($owner);
         $this->em->persist($other);
 
-        $list = new PoiList($owner, 'Desserts', 'desserts', '#ff00aa', 'ice-cream');
+        $list = new PoiList($owner, 'Desserts', '#ff00aa', 'ice-cream');
         $poi = new Poi($owner, 'Gelato Shop', 48.8584, 2.2945, 'Great pistachio gelato', '1 Rue de Paris');
         $this->em->persist($list);
         $this->em->persist($poi);
@@ -385,20 +355,5 @@ final class PoiListTest extends WebTestCase
         self::assertInstanceOf(Cookie::class, $cookie);
 
         return $cookie->getValue();
-    }
-
-    private function truncateTables(): void
-    {
-        $conn = $this->em->getConnection();
-        $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 0');
-        $conn->executeStatement('TRUNCATE TABLE poi_revisions');
-        $conn->executeStatement('TRUNCATE TABLE poi_lists');
-        $conn->executeStatement('TRUNCATE TABLE pois');
-        $conn->executeStatement('TRUNCATE TABLE lists');
-        $conn->executeStatement('TRUNCATE TABLE geocode_cache');
-        $conn->executeStatement('TRUNCATE TABLE magic_link_tokens');
-        $conn->executeStatement('TRUNCATE TABLE invite_tokens');
-        $conn->executeStatement('TRUNCATE TABLE users');
-        $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
     }
 }

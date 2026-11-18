@@ -28,7 +28,6 @@ final class GeocodeTest extends WebTestCase
         $em = static::getContainer()->get(EntityManagerInterface::class);
         \assert($em instanceof EntityManagerInterface);
         $this->em = $em;
-        $this->truncateTables();
     }
 
     public function testGeocodeRequiresAuthentication(): void
@@ -178,6 +177,41 @@ final class GeocodeTest extends WebTestCase
         self::assertSame([], $failingService->search('unknown outage place'));
         self::assertCount($totalBeforeFailure, $this->em->getRepository(GeocodeCache::class)->findAll());
 
+        // Expired cache entry for an existing query hash must refresh in place without a PRIMARY KEY collision
+        $expiredHash = hash('sha256', sprintf('%s|%.4f|%.4f', 'expired cafe', 0.0, 0.0));
+        $expiredEntry = new GeocodeCache(
+            $expiredHash,
+            'nominatim',
+            [['label' => 'Old Name', 'address' => null, 'latitude' => 1.0, 'longitude' => 1.0]],
+            new \DateTimeImmutable('-1 day'),
+        );
+        $this->em->persist($expiredEntry);
+        $this->em->flush();
+
+        $refreshClient = new MockHttpClient([
+            new MockResponse((string) json_encode([
+                'features' => [[
+                    'properties' => ['name' => 'Refreshed Cafe', 'city' => 'Lyon'],
+                    'geometry' => ['coordinates' => [4.8357, 45.7640]],
+                ]],
+            ], JSON_THROW_ON_ERROR)),
+        ]);
+        $refreshService = new GeocodingService(
+            $this->em,
+            $cacheRepo,
+            $refreshClient,
+            'https://photon.komoot.io',
+            'https://nominatim.openstreetmap.org',
+        );
+        $refreshedResults = $refreshService->search('expired cafe');
+        self::assertCount(1, $refreshedResults);
+        self::assertSame('Refreshed Cafe', $refreshedResults[0]['label']);
+        $this->em->clear();
+        $reloadedExpired = $cacheRepo->find($expiredHash);
+        self::assertInstanceOf(GeocodeCache::class, $reloadedExpired);
+        self::assertSame('photon', $reloadedExpired->getProvider());
+        self::assertFalse($reloadedExpired->isExpired());
+
         // Empty query returns []
         self::assertSame([], $fallbackService->search('   '));
 
@@ -187,20 +221,5 @@ final class GeocodeTest extends WebTestCase
         self::assertSame('photon', $entry->getProvider());
         self::assertFalse($entry->isExpired());
         self::assertInstanceOf(\DateTimeImmutable::class, $entry->getExpiresAt());
-    }
-
-    private function truncateTables(): void
-    {
-        $conn = $this->em->getConnection();
-        $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 0');
-        $conn->executeStatement('TRUNCATE TABLE poi_revisions');
-        $conn->executeStatement('TRUNCATE TABLE poi_lists');
-        $conn->executeStatement('TRUNCATE TABLE pois');
-        $conn->executeStatement('TRUNCATE TABLE lists');
-        $conn->executeStatement('TRUNCATE TABLE geocode_cache');
-        $conn->executeStatement('TRUNCATE TABLE magic_link_tokens');
-        $conn->executeStatement('TRUNCATE TABLE invite_tokens');
-        $conn->executeStatement('TRUNCATE TABLE users');
-        $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
     }
 }

@@ -29,7 +29,6 @@ final class PoiLifecycleTest extends WebTestCase
         $em = static::getContainer()->get(EntityManagerInterface::class);
         \assert($em instanceof EntityManagerInterface);
         $this->em = $em;
-        $this->truncateTables();
     }
 
     public function testGuestCanOnlySeePublicPois(): void
@@ -92,7 +91,7 @@ final class PoiLifecycleTest extends WebTestCase
         $creator = new User('creator@yummy.test', 'Creator');
         $this->em->persist($creator);
 
-        $list = new PoiList($creator, 'Paris Cafe', 'paris-cafe', '#123456', 'coffee');
+        $list = new PoiList($creator, 'Paris Cafe', '#123456', 'coffee');
         $this->em->persist($list);
 
         // Paris coordinate: 48.8566, 2.3522
@@ -140,7 +139,7 @@ final class PoiLifecycleTest extends WebTestCase
         $creator = new User('creator@yummy.test', 'Creator');
         $this->em->persist($creator);
 
-        $list = new PoiList($creator, 'Italian', 'italian', '#ff0000', 'pizza');
+        $list = new PoiList($creator, 'Italian', '#ff0000', 'pizza');
         $this->em->persist($list);
         $this->em->flush();
 
@@ -549,20 +548,5 @@ final class PoiLifecycleTest extends WebTestCase
         self::assertInstanceOf(Cookie::class, $cookie);
 
         return $cookie->getValue();
-    }
-
-    private function truncateTables(): void
-    {
-        $conn = $this->em->getConnection();
-        $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 0');
-        $conn->executeStatement('TRUNCATE TABLE poi_revisions');
-        $conn->executeStatement('TRUNCATE TABLE poi_lists');
-        $conn->executeStatement('TRUNCATE TABLE pois');
-        $conn->executeStatement('TRUNCATE TABLE lists');
-        $conn->executeStatement('TRUNCATE TABLE geocode_cache');
-        $conn->executeStatement('TRUNCATE TABLE magic_link_tokens');
-        $conn->executeStatement('TRUNCATE TABLE invite_tokens');
-        $conn->executeStatement('TRUNCATE TABLE users');
-        $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
     }
 }

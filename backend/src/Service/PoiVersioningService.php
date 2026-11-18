@@ -64,35 +64,37 @@ final class PoiVersioningService
             return null;
         }
 
-        // Restore historical attributes from the snapshot
-        if (isset($snapshot['name']) && is_string($snapshot['name'])) {
-            $poi->setName($snapshot['name']);
-        }
-        if (array_key_exists('description', $snapshot)) {
-            $poi->setDescription(is_string($snapshot['description']) ? $snapshot['description'] : null);
-        }
-        if (array_key_exists('address', $snapshot)) {
-            $poi->setAddress(is_string($snapshot['address']) ? $snapshot['address'] : null);
-        }
-        if (isset($snapshot['latitude'], $snapshot['longitude']) && is_numeric($snapshot['latitude']) && is_numeric($snapshot['longitude'])) {
-            $poi->setCoordinates((float) $snapshot['latitude'], (float) $snapshot['longitude']);
-        }
+        // Restore historical attributes, bump #[ORM\Version], and append revision N+1 atomically
+        return $this->em->wrapInTransaction(function () use ($poi, $snapshot, $revisionNumber, $editor): PoiRevision {
+            if (isset($snapshot['name']) && is_string($snapshot['name'])) {
+                $poi->setName($snapshot['name']);
+            }
+            if (array_key_exists('description', $snapshot)) {
+                $poi->setDescription(is_string($snapshot['description']) ? $snapshot['description'] : null);
+            }
+            if (array_key_exists('address', $snapshot)) {
+                $poi->setAddress(is_string($snapshot['address']) ? $snapshot['address'] : null);
+            }
+            if (isset($snapshot['latitude'], $snapshot['longitude']) && is_numeric($snapshot['latitude']) && is_numeric($snapshot['longitude'])) {
+                $poi->setCoordinates((float) $snapshot['latitude'], (float) $snapshot['longitude']);
+            }
 
-        // Flush POI attribute changes first so Doctrine increments the #[ORM\Version] lock counter.
-        // This ensures the forward revision record gets the newly incremented version number.
-        $this->em->flush();
+            // Flush POI attribute changes first so Doctrine increments the #[ORM\Version] lock counter.
+            // This ensures the forward revision record gets the newly incremented version number.
+            $this->em->flush();
 
-        // Forward revert: record a new revision that captures what was restored and from which past revision
-        $forwardDiff = [
-            'revertedFromRevision' => $revisionNumber,
-            'snapshot' => $snapshot,
-        ];
+            // Forward revert: record a new revision that captures what was restored and from which past revision
+            $forwardDiff = [
+                'revertedFromRevision' => $revisionNumber,
+                'snapshot' => $snapshot,
+            ];
 
-        $forwardRevision = new PoiRevision($poi, $editor, $poi->getVersion(), $forwardDiff);
-        $this->em->persist($forwardRevision);
-        $this->em->flush();
+            $forwardRevision = new PoiRevision($poi, $editor, $poi->getVersion(), $forwardDiff);
+            $this->em->persist($forwardRevision);
+            $this->em->flush();
 
-        return $forwardRevision;
+            return $forwardRevision;
+        });
     }
 
     /**
