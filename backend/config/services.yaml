@@ -7,6 +7,7 @@ parameters:
     app.pmtiles_url: '%env(string:default::PMTILES_URL)%'
     app.geocoder_provider: '%env(string:default::GEOCODER_PROVIDER)%'
     app.public_browsing_enabled: '%env(bool:default::PUBLIC_BROWSING_ENABLED)%'
+    app.photo_storage_dir: '%kernel.project_dir%/var/storage/photos'
 
 services:
     _defaults:
@@ -21,6 +22,7 @@ services:
             string $pmtilesUrl: '%app.pmtiles_url%'
             string $geocoderProvider: '%app.geocoder_provider%'
             bool $publicBrowsingEnabled: '%app.public_browsing_enabled%'
+            string $photoStorageDir: '%app.photo_storage_dir%'
 
     App\:
         resource: '../src/'

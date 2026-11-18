@@ -52,7 +52,7 @@
 
 ### 3.4 Reviews, Comments, Reactions & Photos
 - **FR-SOC-01:** Members (including the POI creator) can add a personal **Review** (numeric/star rating + text + optional attached photos) to a POI. Photos attached to a review are also included in the POI's unified gallery (ordered by direct POI photos first, then review photos), with optional origin labels and strict respect for visibility settings.
-- **FR-SOC-02:** Members can add **Comments** and **Emoji Reactions** on POIs or reviews (per-photo comments/reactions are omitted in v1 to avoid fragmented threads).
+- **FR-SOC-02:** Members can add **Comments** on POIs and **Emoji Reactions** on POIs, reviews, and photos (per-photo comment threads are omitted in v1 to avoid fragmented discussions).
 - **FR-SOC-03:** Members can upload multiple **Photos** to a POI. All uploaded photos have EXIF/GPS metadata stripped server-side before storage.
 - **FR-SOC-04:** Creators/uploaders (and Admins) can delete their own POIs, lists, reviews, comments, and photos.
 

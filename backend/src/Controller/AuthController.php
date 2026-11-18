@@ -20,6 +20,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Uid\Uuid;
@@ -121,17 +122,13 @@ final class AuthController extends AbstractController
     /**
      * Revokes an unused invite token (Admin only).
      */
-    #[Route('/api/auth/invites/{id}', name: 'api_auth_invites_revoke', methods: ['DELETE'])]
+    #[Route('/api/auth/invites/{id}', name: 'api_auth_invites_revoke', requirements: ['id' => Requirement::UUID], methods: ['DELETE'])]
     #[IsGranted('ROLE_ADMIN')]
     public function revokeInvite(
         string $id,
         InviteTokenRepository $invites,
         EntityManagerInterface $em,
     ): JsonResponse {
-        if (!Uuid::isValid($id)) {
-            return $this->json(['error' => 'Invalid ID.'], Response::HTTP_NOT_FOUND);
-        }
-
         $invite = $invites->find(Uuid::fromString($id));
         if ($invite === null) {
             return $this->json(['error' => 'Invite not found.'], Response::HTTP_NOT_FOUND);

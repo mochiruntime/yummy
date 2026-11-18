@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Dto\Poi\PoiCreateInputDto;
+use App\Dto\Poi\PoiFilterQueryDto;
 use App\Dto\Poi\PoiUpdateInputDto;
 use App\Dto\Poi\VisibilityInputDto;
 use App\Entity\Poi;
@@ -12,14 +13,17 @@ use App\Entity\User;
 use App\Repository\PoiListRepository;
 use App\Repository\PoiRepository;
 use App\Repository\PoiRevisionRepository;
+use App\Security\Voter\ResourceOwnerVoter;
+use App\Service\PoiDetailAssembler;
 use App\Service\PoiVersioningService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Attribute\MapQueryString;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Uid\Uuid;
@@ -38,54 +42,18 @@ final class PoiController extends AbstractController
     /**
      * Queries POIs filtered by map viewport bounding box, category lists, and user authentication state.
      *
-     * @param Request            $request Current HTTP request containing query params ('bbox', 'listIds')
-     * @param PoiRepository      $pois    POI repository for executing spatial queries
-     * @param User|null          $user    Current authenticated user, or null if guest
+     * @param PoiRepository      $pois  POI repository for executing spatial queries
+     * @param PoiFilterQueryDto  $query Validated bbox and listIds query parameters
+     * @param User|null          $user  Current authenticated user, or null if guest
      */
     #[Route('/api/pois', name: 'api_pois_list', methods: ['GET'])]
     public function index(
-        Request $request,
         PoiRepository $pois,
+        #[MapQueryString(validationFailedStatusCode: Response::HTTP_BAD_REQUEST)] PoiFilterQueryDto $query = new PoiFilterQueryDto(),
         #[CurrentUser] ?User $user = null,
     ): JsonResponse {
-        $bbox = null;
-        $rawBbox = $request->query->getString('bbox', '');
-
-        // Parse and validate bounding-box query parameter: minLng,minLat,maxLng,maxLat
-        if ($rawBbox !== '') {
-            $parts = explode(',', $rawBbox);
-            if (count($parts) === 4 && is_numeric($parts[0]) && is_numeric($parts[1]) && is_numeric($parts[2]) && is_numeric($parts[3])) {
-                $minLng = (float) $parts[0];
-                $minLat = (float) $parts[1];
-                $maxLng = (float) $parts[2];
-                $maxLat = (float) $parts[3];
-
-                // Validate coordinate ranges to prevent malformed or inverted geometry queries
-                if ($minLat < -90.0 || $maxLat > 90.0 || $minLng < -180.0 || $maxLng > 180.0 || $minLat > $maxLat || $minLng > $maxLng) {
-                    return $this->json(['error' => 'Invalid bbox bounds.'], Response::HTTP_BAD_REQUEST);
-                }
-
-                $bbox = [
-                    'minLng' => $minLng,
-                    'minLat' => $minLat,
-                    'maxLng' => $maxLng,
-                    'maxLat' => $maxLat,
-                ];
-            } else {
-                return $this->json(['error' => 'Invalid bbox format. Expected minLng,minLat,maxLng,maxLat.'], Response::HTTP_BAD_REQUEST);
-            }
-        }
-
-        // Parse optional comma-separated list of category UUID filters
-        $listIds = [];
-        $rawLists = $request->query->getString('listIds', '');
-        if ($rawLists !== '') {
-            $listIds = array_values(array_filter(array_map('trim', explode(',', $rawLists))));
-        }
-
         // Guests only see public POIs; authenticated members see public POIs and instance POIs
-        $isGuest = ($user === null);
-        $results = $pois->findByFilters($bbox, $listIds, $isGuest);
+        $results = $pois->findByFilters($query->toBbox(), $query->toListIds(), $user === null);
 
         return $this->json($results, context: ['groups' => ['poi:summary']]);
     }
@@ -106,6 +74,7 @@ final class PoiController extends AbstractController
         #[CurrentUser] User $user,
         PoiListRepository $lists,
         PoiVersioningService $versioning,
+        PoiDetailAssembler $detailAssembler,
         EntityManagerInterface $em,
     ): JsonResponse {
         $poi = new Poi(
@@ -118,13 +87,11 @@ final class PoiController extends AbstractController
             $dto->isPublic,
         );
 
-        // Attach existing valid lists if supplied
+        // Attach existing lists if supplied (UUID format is already validated by PoiCreateInputDto)
         foreach ($dto->listIds as $listId) {
-            if (Uuid::isValid($listId)) {
-                $list = $lists->find(Uuid::fromString($listId));
-                if ($list !== null) {
-                    $poi->addList($list);
-                }
+            $list = $lists->find(Uuid::fromString($listId));
+            if ($list !== null) {
+                $poi->addList($list);
             }
         }
 
@@ -138,26 +105,24 @@ final class PoiController extends AbstractController
         ]);
         $em->flush();
 
-        return $this->json($poi, Response::HTTP_CREATED, context: ['groups' => ['poi:read']]);
+        return $this->json($detailAssembler->assemble($poi, $user), Response::HTTP_CREATED);
     }
 
     /**
      * Retrieves full POI details, enforcing public-only visibility for unauthenticated guests.
      *
-     * @param string        $id   UUID string of the target POI
-     * @param PoiRepository $pois POI repository
-     * @param User|null     $user Authenticated user, or null if guest
+     * @param string             $id              UUID string of the target POI
+     * @param PoiRepository      $pois            POI repository
+     * @param PoiDetailAssembler $detailAssembler Social detail assembler
+     * @param User|null          $user            Authenticated user, or null if guest
      */
-    #[Route('/api/pois/{id}', name: 'api_pois_get', methods: ['GET'])]
+    #[Route('/api/pois/{id}', name: 'api_pois_get', requirements: ['id' => Requirement::UUID], methods: ['GET'])]
     public function show(
         string $id,
         PoiRepository $pois,
+        PoiDetailAssembler $detailAssembler,
         #[CurrentUser] ?User $user = null,
     ): JsonResponse {
-        if (!Uuid::isValid($id)) {
-            return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
-        }
-
         $poi = $pois->find(Uuid::fromString($id));
         if ($poi === null) {
             return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
@@ -168,7 +133,7 @@ final class PoiController extends AbstractController
             return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
         }
 
-        return $this->json($poi, context: ['groups' => ['poi:read']]);
+        return $this->json($detailAssembler->assemble($poi, $user));
     }
 
     /**
@@ -181,7 +146,7 @@ final class PoiController extends AbstractController
      * @param PoiVersioningService   $versioning Revision audit service
      * @param EntityManagerInterface $em         Doctrine entity manager
      */
-    #[Route('/api/pois/{id}', name: 'api_pois_update', methods: ['PATCH'])]
+    #[Route('/api/pois/{id}', name: 'api_pois_update', requirements: ['id' => Requirement::UUID], methods: ['PATCH'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function update(
         string $id,
@@ -189,12 +154,9 @@ final class PoiController extends AbstractController
         #[CurrentUser] User $user,
         PoiRepository $pois,
         PoiVersioningService $versioning,
+        PoiDetailAssembler $detailAssembler,
         EntityManagerInterface $em,
     ): JsonResponse {
-        if (!Uuid::isValid($id)) {
-            return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
-        }
-
         $poi = $pois->find(Uuid::fromString($id));
         if ($poi === null) {
             return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
@@ -251,7 +213,7 @@ final class PoiController extends AbstractController
 
         $em->flush();
 
-        return $this->json($poi, context: ['groups' => ['poi:read']]);
+        return $this->json($detailAssembler->assemble($poi, $user));
     }
 
     /**
@@ -259,32 +221,24 @@ final class PoiController extends AbstractController
      *
      * @param string                 $id   UUID string of the target POI
      * @param VisibilityInputDto     $dto  Validated boolean payload
-     * @param User                   $user Authenticated caller
      * @param PoiRepository          $pois POI repository
      * @param EntityManagerInterface $em   Doctrine entity manager
      */
-    #[Route('/api/pois/{id}/visibility', name: 'api_pois_update_visibility', methods: ['PATCH'])]
+    #[Route('/api/pois/{id}/visibility', name: 'api_pois_update_visibility', requirements: ['id' => Requirement::UUID], methods: ['PATCH'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function updateVisibility(
         string $id,
         #[MapRequestPayload] VisibilityInputDto $dto,
-        #[CurrentUser] User $user,
         PoiRepository $pois,
         EntityManagerInterface $em,
     ): JsonResponse {
-        if (!Uuid::isValid($id)) {
-            return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
-        }
-
         $poi = $pois->find(Uuid::fromString($id));
         if ($poi === null) {
             return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
         }
 
         // Only the creator or an instance Admin can alter visibility
-        if ($poi->getCreatedBy()->getId()->toRfc4122() !== $user->getId()->toRfc4122() && !$user->isAdmin()) {
-            return $this->json(['error' => 'Access denied.'], Response::HTTP_FORBIDDEN);
-        }
+        $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $poi);
 
         $poi->setIsPublic($dto->isPublic);
         $em->flush();
@@ -296,31 +250,23 @@ final class PoiController extends AbstractController
      * Deletes a POI from the system (creator or Admin only).
      *
      * @param string                 $id   UUID string of the target POI
-     * @param User                   $user Authenticated caller
      * @param PoiRepository          $pois POI repository
      * @param EntityManagerInterface $em   Doctrine entity manager
      */
-    #[Route('/api/pois/{id}', name: 'api_pois_delete', methods: ['DELETE'])]
+    #[Route('/api/pois/{id}', name: 'api_pois_delete', requirements: ['id' => Requirement::UUID], methods: ['DELETE'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function delete(
         string $id,
-        #[CurrentUser] User $user,
         PoiRepository $pois,
         EntityManagerInterface $em,
     ): JsonResponse {
-        if (!Uuid::isValid($id)) {
-            return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
-        }
-
         $poi = $pois->find(Uuid::fromString($id));
         if ($poi === null) {
             return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
         }
 
         // Only the creator or an instance Admin can delete a POI
-        if ($poi->getCreatedBy()->getId()->toRfc4122() !== $user->getId()->toRfc4122() && !$user->isAdmin()) {
-            return $this->json(['error' => 'Access denied.'], Response::HTTP_FORBIDDEN);
-        }
+        $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $poi);
 
         $em->remove($poi);
         $em->flush();
@@ -335,17 +281,13 @@ final class PoiController extends AbstractController
      * @param PoiRepository         $pois      POI repository
      * @param PoiRevisionRepository $revisions Revision repository
      */
-    #[Route('/api/pois/{id}/revisions', name: 'api_pois_revisions', methods: ['GET'])]
+    #[Route('/api/pois/{id}/revisions', name: 'api_pois_revisions', requirements: ['id' => Requirement::UUID], methods: ['GET'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function listRevisions(
         string $id,
         PoiRepository $pois,
         PoiRevisionRepository $revisions,
     ): JsonResponse {
-        if (!Uuid::isValid($id)) {
-            return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
-        }
-
         $poi = $pois->find(Uuid::fromString($id));
         if ($poi === null) {
             return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
@@ -365,7 +307,7 @@ final class PoiController extends AbstractController
      * @param PoiRepository        $pois           POI repository
      * @param PoiVersioningService $versioning     Revision audit service
      */
-    #[Route('/api/pois/{id}/revisions/{revisionNumber}/revert', name: 'api_pois_revert_revision', methods: ['POST'])]
+    #[Route('/api/pois/{id}/revisions/{revisionNumber}/revert', name: 'api_pois_revert_revision', requirements: ['id' => Requirement::UUID], methods: ['POST'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function revertRevision(
         string $id,
@@ -373,20 +315,15 @@ final class PoiController extends AbstractController
         #[CurrentUser] User $user,
         PoiRepository $pois,
         PoiVersioningService $versioning,
+        PoiDetailAssembler $detailAssembler,
     ): JsonResponse {
-        if (!Uuid::isValid($id)) {
-            return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
-        }
-
         $poi = $pois->find(Uuid::fromString($id));
         if ($poi === null) {
             return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
         }
 
         // Only the creator or an instance Admin can trigger a revert
-        if ($poi->getCreatedBy()->getId()->toRfc4122() !== $user->getId()->toRfc4122() && !$user->isAdmin()) {
-            return $this->json(['error' => 'Access denied.'], Response::HTTP_FORBIDDEN);
-        }
+        $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $poi);
 
         // Forward revert: restore attributes and record a new revision N+1
         $reverted = $versioning->revertToRevision($poi, $revisionNumber, $user);
@@ -394,6 +331,6 @@ final class PoiController extends AbstractController
             return $this->json(['error' => 'Target revision not found or invalid.'], Response::HTTP_NOT_FOUND);
         }
 
-        return $this->json($poi, context: ['groups' => ['poi:read']]);
+        return $this->json($detailAssembler->assemble($poi, $user));
     }
 }

@@ -46,3 +46,19 @@
 - **Meaningful State Assertions**: Tests must not merely check HTTP status codes. They must assert database state changes, entity attribute values, side effects, and concurrency conflict rejections.
 - **Database Isolation**: Tests must execute table truncation in `setUp()` with foreign key checks toggled to guarantee zero cross-test state leakage.
 - **Zero External Dependencies**: External HTTP calls must be mocked with `MockHttpClient` and synthetic fixtures so test execution is offline, fast, and deterministic.
+
+## 7. REST API Serdes, Routing & Authorization Conventions
+- **Typed Input DTOs & File Uploads**:
+  - All request payloads (both JSON and `multipart/form-data` metadata) must be deserialized and validated using Symfony `#[MapRequestPayload]` into dedicated typed DTOs under `backend/src/Dto/`. Never call `json_decode($request->getContent(), ...)` or read `$request->request` manually in controllers.
+  - File uploads must use `#[MapUploadedFile]` on controller parameters rather than `$request->files->get(...)`. When multipart metadata fields are all optional, type the DTO parameter as nullable with a `null` default (`#[MapRequestPayload] ?MyDto $dto = null`) so empty form bodies fall back to DTO defaults cleanly.
+  - Query parameters must be bound declaratively via `#[MapQueryParameter]` (for a single trivial scalar param like `?size=full`) or `#[MapQueryString(validationFailedStatusCode: Response::HTTP_BAD_REQUEST)]` (for multi-field or constrained query parameters) rather than reading `$request->query` manually.
+  - **Keep Parsing & Validation Out of Controllers**: Never put manual string splitting, numeric/range checks, or multi-field input validation inside controller actions. Put `#[Assert\...]` / `#[Assert\Callback]` constraints and `to*()` conversion helpers on the DTO (e.g. `PoiFilterQueryDto`, `GeocodeQueryDto`) so controllers stay thin and declarative.
+- **Serialization & Viewer-Scoped Aggregates**:
+  - Standard resource responses should serialize Doctrine entities using `$this->json($entity, ..., context: ['groups' => [...]])`.
+  - Viewer-scoped or multi-source aggregate payloads (such as `PoiDetail`) must be built by dedicated assembler services (e.g. `PoiDetailAssembler`) rather than storing request-scoped state on Doctrine entities.
+- **Unified JSON Error Envelope**:
+  - All `/api/*` error responses must use the `{"error": "..."}` envelope (with `violations` included on HTTP `422` validation failures), enforced globally for `HttpExceptionInterface` and `ValidationFailedException` via `ApiExceptionSubscriber`.
+- **Declarative UUID Route Requirements**:
+  - Enforce UUID path parameter syntax on `#[Route]` attributes using `requirements: ['id' => Requirement::UUID]` (returning HTTP `404` automatically on malformed IDs) instead of repeating `Uuid::isValid()` inside controller actions.
+- **Voter-Based Resource Ownership**:
+  - Check ownership/admin permissions via `$this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $entity)` rather than duplicating inline author/owner/admin conditionals across controllers, and keep method `@param` docblocks synchronized when removing unused `$user` parameters.

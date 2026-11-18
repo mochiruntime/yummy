@@ -596,15 +596,45 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [emoji]
-              properties:
-                emoji:
-                  type: string
-                  maxLength: 16
-                isPublic:
-                  type: boolean
-                  default: false
+              $ref: "#/components/schemas/ReactionInput"
+      responses:
+        "200":
+          description: Reaction toggled
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reviews/{id}/reactions:
+    post:
+      operationId: toggleReviewReaction
+      tags: [Social]
+      summary: Toggle an emoji reaction on a review
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReactionInput"
+      responses:
+        "200":
+          description: Reaction toggled
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /photos/{id}/reactions:
+    post:
+      operationId: togglePhotoReaction
+      tags: [Photos]
+      summary: Toggle an emoji reaction on a photo
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReactionInput"
       responses:
         "200":
           description: Reaction toggled
@@ -1070,6 +1100,28 @@ components:
           type: string
           format: date-time
 
+    ReactionInput:
+      type: object
+      required: [emoji]
+      properties:
+        emoji:
+          type: string
+          maxLength: 16
+        isPublic:
+          type: boolean
+          default: false
+
+    ReactionSummary:
+      type: object
+      required: [emoji, count, reactedByMe]
+      properties:
+        emoji:
+          type: string
+        count:
+          type: integer
+        reactedByMe:
+          type: boolean
+
     ReviewInput:
       type: object
       required: [rating]
@@ -1102,6 +1154,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        reactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReactionSummary"
 
     Comment:
       type: object
@@ -1119,6 +1175,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        reactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReactionSummary"
 
     Photo:
       type: object
@@ -1141,6 +1201,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        reactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReactionSummary"
 
     ActivityEvent:
       type: object
@@ -1164,3 +1228,7 @@ components:
         createdAt:
           type: string
           format: date-time
+        reactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReactionSummary"

@@ -10,12 +10,14 @@ use App\Entity\PoiList;
 use App\Entity\User;
 use App\Repository\PoiListRepository;
 use App\Repository\PoiRepository;
+use App\Security\Voter\ResourceOwnerVoter;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Uid\Uuid;
@@ -76,32 +78,24 @@ final class PoiListController extends AbstractController
      *
      * @param string                 $id    UUID string of the target list
      * @param PoiListInputDto        $dto   Validated update payload
-     * @param User                   $user  Authenticated caller (must be list owner or Admin)
      * @param PoiListRepository      $lists List repository
      * @param EntityManagerInterface $em    Doctrine entity manager
      */
-    #[Route('/api/lists/{id}', name: 'api_lists_update', methods: ['PATCH'])]
+    #[Route('/api/lists/{id}', name: 'api_lists_update', requirements: ['id' => Requirement::UUID], methods: ['PATCH'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function update(
         string $id,
         #[MapRequestPayload] PoiListInputDto $dto,
-        #[CurrentUser] User $user,
         PoiListRepository $lists,
         EntityManagerInterface $em,
     ): JsonResponse {
-        if (!Uuid::isValid($id)) {
-            return $this->json(['error' => 'Invalid ID.'], Response::HTTP_NOT_FOUND);
-        }
-
         $list = $lists->find(Uuid::fromString($id));
         if ($list === null) {
             return $this->json(['error' => 'List not found.'], Response::HTTP_NOT_FOUND);
         }
 
         // Authorization check: Only the owner or an instance Admin may modify list metadata
-        if ($list->getOwner()->getId()->toRfc4122() !== $user->getId()->toRfc4122() && !$user->isAdmin()) {
-            return $this->json(['error' => 'Access denied.'], Response::HTTP_FORBIDDEN);
-        }
+        $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $list);
 
         // Regenerate unique slug if the list name changed
         if ($dto->name !== '' && $dto->name !== $list->getName()) {
@@ -121,31 +115,23 @@ final class PoiListController extends AbstractController
      * Deletes a curated list. Attached POIs are preserved (only join table rows are removed).
      *
      * @param string                 $id    UUID string of the target list
-     * @param User                   $user  Authenticated caller (must be list owner or Admin)
      * @param PoiListRepository      $lists List repository
      * @param EntityManagerInterface $em    Doctrine entity manager
      */
-    #[Route('/api/lists/{id}', name: 'api_lists_delete', methods: ['DELETE'])]
+    #[Route('/api/lists/{id}', name: 'api_lists_delete', requirements: ['id' => Requirement::UUID], methods: ['DELETE'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function delete(
         string $id,
-        #[CurrentUser] User $user,
         PoiListRepository $lists,
         EntityManagerInterface $em,
     ): JsonResponse {
-        if (!Uuid::isValid($id)) {
-            return $this->json(['error' => 'Invalid ID.'], Response::HTTP_NOT_FOUND);
-        }
-
         $list = $lists->find(Uuid::fromString($id));
         if ($list === null) {
             return $this->json(['error' => 'List not found.'], Response::HTTP_NOT_FOUND);
         }
 
         // Only the owner or an instance Admin may delete the list
-        if ($list->getOwner()->getId()->toRfc4122() !== $user->getId()->toRfc4122() && !$user->isAdmin()) {
-            return $this->json(['error' => 'Access denied.'], Response::HTTP_FORBIDDEN);
-        }
+        $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $list);
 
         $em->remove($list);
         $em->flush();
@@ -158,25 +144,19 @@ final class PoiListController extends AbstractController
      *
      * @param string                 $id    UUID string of the target list
      * @param string                 $poiId UUID string of the target POI
-     * @param User                   $user  Authenticated caller (must be list owner or Admin)
      * @param PoiListRepository      $lists List repository
      * @param PoiRepository          $pois  POI repository
      * @param EntityManagerInterface $em    Doctrine entity manager
      */
-    #[Route('/api/lists/{id}/pois/{poiId}', name: 'api_lists_add_poi', methods: ['POST'])]
+    #[Route('/api/lists/{id}/pois/{poiId}', name: 'api_lists_add_poi', requirements: ['id' => Requirement::UUID, 'poiId' => Requirement::UUID], methods: ['POST'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function addPoi(
         string $id,
         string $poiId,
-        #[CurrentUser] User $user,
         PoiListRepository $lists,
         PoiRepository $pois,
         EntityManagerInterface $em,
     ): JsonResponse {
-        if (!Uuid::isValid($id) || !Uuid::isValid($poiId)) {
-            return $this->json(['error' => 'Invalid ID.'], Response::HTTP_NOT_FOUND);
-        }
-
         $list = $lists->find(Uuid::fromString($id));
         $poi = $pois->find(Uuid::fromString($poiId));
 
@@ -185,9 +165,7 @@ final class PoiListController extends AbstractController
         }
 
         // Only the list owner or an instance Admin may curate list members
-        if ($list->getOwner()->getId()->toRfc4122() !== $user->getId()->toRfc4122() && !$user->isAdmin()) {
-            return $this->json(['error' => 'Only the list owner or an Admin can add POIs to this list.'], Response::HTTP_FORBIDDEN);
-        }
+        $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $list);
 
         $poi->addList($list);
         $em->flush();
@@ -200,25 +178,19 @@ final class PoiListController extends AbstractController
      *
      * @param string                 $id    UUID string of the target list
      * @param string                 $poiId UUID string of the target POI
-     * @param User                   $user  Authenticated caller (must be list owner or Admin)
      * @param PoiListRepository      $lists List repository
      * @param PoiRepository          $pois  POI repository
      * @param EntityManagerInterface $em    Doctrine entity manager
      */
-    #[Route('/api/lists/{id}/pois/{poiId}', name: 'api_lists_remove_poi', methods: ['DELETE'])]
+    #[Route('/api/lists/{id}/pois/{poiId}', name: 'api_lists_remove_poi', requirements: ['id' => Requirement::UUID, 'poiId' => Requirement::UUID], methods: ['DELETE'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function removePoi(
         string $id,
         string $poiId,
-        #[CurrentUser] User $user,
         PoiListRepository $lists,
         PoiRepository $pois,
         EntityManagerInterface $em,
     ): JsonResponse {
-        if (!Uuid::isValid($id) || !Uuid::isValid($poiId)) {
-            return $this->json(['error' => 'Invalid ID.'], Response::HTTP_NOT_FOUND);
-        }
-
         $list = $lists->find(Uuid::fromString($id));
         $poi = $pois->find(Uuid::fromString($poiId));
 
@@ -227,9 +199,7 @@ final class PoiListController extends AbstractController
         }
 
         // Only the list owner or an instance Admin may curate list members
-        if ($list->getOwner()->getId()->toRfc4122() !== $user->getId()->toRfc4122() && !$user->isAdmin()) {
-            return $this->json(['error' => 'Only the list owner or an Admin can remove POIs from this list.'], Response::HTTP_FORBIDDEN);
-        }
+        $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $list);
 
         $poi->removeList($list);
         $em->flush();

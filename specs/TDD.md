@@ -65,7 +65,7 @@ erDiagram
 | `reviews` | `id`, `poi_id`, `author_id`, `rating` (1–5), `body`, `is_public` (default `false`), `created_at`, `updated_at` | One or more reviews per user/POI (configurable; default 1 per user per POI). |
 | `comments` | `id`, `poi_id`, `author_id`, `body`, `is_public` (default `false`), `created_at` | Lightweight discussion thread on a POI. |
 | `photos` | `id`, `poi_id`, `review_id` (nullable FK), `uploader_id`, `storage_key`, `mime_type`, `width`, `height`, `caption`, `is_public` (default `false`), `created_at` | EXIF/GPS stripped via PHP `imagick`/`gd` on upload; `review_id` links review-attached photos into the unified POI gallery. |
-| `reactions` | `id`, `poi_id`, `user_id`, `emoji`, `is_public` (default `false`), `created_at` | Unique constraint on `(poi_id, user_id, emoji)`. |
+| `reactions` | `id`, `poi_id`, `review_id` (nullable FK), `photo_id` (nullable FK), `target_type`, `target_id`, `user_id`, `emoji`, `is_public` (default `false`), `created_at` | Unique constraint on `(target_type, target_id, user_id, emoji)` supports reactions on POIs, reviews, and photos with cascading deletes. |
 | `activity_events` | `id`, `actor_id`, `event_type`, `poi_id`, `target_type`, `target_id`, `payload` (JSON), `is_public` (denormalized), `created_at` | Indexed by `(created_at DESC)` for cursor-paginated feed. |
 | `geocode_cache` | `query_hash` (SHA-256 PK), `provider`, `response_json`, `expires_at` | Caches Photon/Nominatim results in MariaDB (e.g., 7-day TTL). |
 

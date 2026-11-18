@@ -1,0 +1,220 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controller;
+
+use App\Dto\Poi\VisibilityInputDto;
+use App\Dto\Social\PhotoUploadInputDto;
+use App\Entity\Photo;
+use App\Entity\Review;
+use App\Entity\User;
+use App\Repository\PhotoRepository;
+use App\Repository\PoiRepository;
+use App\Repository\ReviewRepository;
+use App\Security\Voter\ResourceOwnerVoter;
+use App\Service\ImageProcessingService;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
+use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
+use Symfony\Component\HttpKernel\Attribute\MapUploadedFile;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Requirement\Requirement;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Component\Uid\Uuid;
+
+/**
+ * REST API controller for EXIF-stripped photo uploads, visibility toggling, deletion, and secure streaming.
+ */
+final class PhotoController extends AbstractController
+{
+    /**
+     * Uploads a photo to a POI (and optionally links it to a review), stripping all EXIF/GPS metadata.
+     *
+     * @param string                   $id             UUID string of the target POI
+     * @param User                     $user           Authenticated uploader
+     * @param PoiRepository            $pois           POI repository
+     * @param ReviewRepository         $reviews        Review repository
+     * @param ImageProcessingService   $imageProcessor EXIF-stripping and thumbnailing service
+     * @param EntityManagerInterface   $em             Doctrine entity manager
+     * @param PhotoUploadInputDto|null $dto            Validated multipart metadata (caption, reviewId, isPublic)
+     * @param UploadedFile|null        $file           Uploaded image file
+     */
+    #[Route('/api/pois/{id}/photos', name: 'api_pois_upload_photo', requirements: ['id' => Requirement::UUID], methods: ['POST'])]
+    #[IsGranted('IS_AUTHENTICATED_FULLY')]
+    public function upload(
+        string $id,
+        #[CurrentUser] User $user,
+        PoiRepository $pois,
+        ReviewRepository $reviews,
+        ImageProcessingService $imageProcessor,
+        EntityManagerInterface $em,
+        #[MapRequestPayload] ?PhotoUploadInputDto $dto = null,
+        #[MapUploadedFile] ?UploadedFile $file = null,
+    ): JsonResponse {
+        $dto ??= new PhotoUploadInputDto();
+        $poi = $pois->find(Uuid::fromString($id));
+        if ($poi === null) {
+            return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        if ($file === null) {
+            return $this->json(['error' => 'Missing "file" upload in multipart request.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Validate optional reviewId belongs to this same POI
+        $review = null;
+        if ($dto->reviewId !== null && $dto->reviewId !== '') {
+            $review = $reviews->find(Uuid::fromString($dto->reviewId));
+            if (!$review instanceof Review || $review->getPoi()->getId()->toRfc4122() !== $poi->getId()->toRfc4122()) {
+                return $this->json(['error' => 'Target review not found on this POI.'], Response::HTTP_NOT_FOUND);
+            }
+        }
+
+        $caption = trim((string) $dto->caption);
+
+        try {
+            $processed = $imageProcessor->processAndStore($file);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $photo = new Photo(
+            $poi,
+            $user,
+            $processed['storageKey'],
+            $processed['mimeType'],
+            $processed['width'],
+            $processed['height'],
+            $review,
+            $caption !== '' ? $caption : null,
+            $dto->isPublic,
+        );
+
+        $em->persist($photo);
+        $em->flush();
+
+        return $this->json($photo, Response::HTTP_CREATED, context: ['groups' => ['photo:read']]);
+    }
+
+    /**
+     * Toggles the public visibility flag on a single photo (uploader or Admin only).
+     *
+     * @param string                 $id     UUID string of the target photo
+     * @param VisibilityInputDto     $dto    Validated visibility payload
+     * @param PhotoRepository        $photos Photo repository
+     * @param EntityManagerInterface $em     Doctrine entity manager
+     */
+    #[Route('/api/photos/{id}/visibility', name: 'api_photos_update_visibility', requirements: ['id' => Requirement::UUID], methods: ['PATCH'])]
+    #[IsGranted('IS_AUTHENTICATED_FULLY')]
+    public function updateVisibility(
+        string $id,
+        #[MapRequestPayload] VisibilityInputDto $dto,
+        PhotoRepository $photos,
+        EntityManagerInterface $em,
+    ): JsonResponse {
+        $photo = $photos->find(Uuid::fromString($id));
+        if ($photo === null) {
+            return $this->json(['error' => 'Photo not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $photo);
+
+        $photo->setIsPublic($dto->isPublic);
+        $em->flush();
+
+        return $this->json($photo, context: ['groups' => ['photo:read']]);
+    }
+
+    /**
+     * Deletes a photo and removes its stored full/thumbnail files from disk (uploader or Admin only).
+     *
+     * @param string                 $id             UUID string of the target photo
+     * @param PhotoRepository        $photos         Photo repository
+     * @param ImageProcessingService $imageProcessor Service to clean up stored files
+     * @param EntityManagerInterface $em             Doctrine entity manager
+     */
+    #[Route('/api/photos/{id}', name: 'api_photos_delete', requirements: ['id' => Requirement::UUID], methods: ['DELETE'])]
+    #[IsGranted('IS_AUTHENTICATED_FULLY')]
+    public function delete(
+        string $id,
+        PhotoRepository $photos,
+        ImageProcessingService $imageProcessor,
+        EntityManagerInterface $em,
+    ): JsonResponse {
+        $photo = $photos->find(Uuid::fromString($id));
+        if ($photo === null) {
+            return $this->json(['error' => 'Photo not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $photo);
+
+        $imageProcessor->deleteFiles($photo);
+        $em->remove($photo);
+        $em->flush();
+
+        return new JsonResponse(null, Response::HTTP_NO_CONTENT);
+    }
+
+    /**
+     * Streams EXIF-stripped photo bytes while strictly enforcing parent-child visibility.
+     *
+     * Guests receive HTTP 404 (enumeration prevention) unless:
+     * - photo.isPublic === true
+     * - AND photo.poi.isPublic === true
+     * - AND (photo.review === null || photo.review.isPublic === true)
+     *
+     * @param string                 $id             UUID string of the target photo
+     * @param PhotoRepository        $photos         Photo repository
+     * @param ImageProcessingService $imageProcessor Service resolving variant file paths
+     * @param string                 $size           Requested image variant ("thumb" or "full")
+     * @param User|null              $user           Current authenticated user, or null for guests
+     */
+    #[Route('/api/photos/{id}/file', name: 'api_photos_get_file', requirements: ['id' => Requirement::UUID], methods: ['GET'])]
+    public function streamFile(
+        string $id,
+        PhotoRepository $photos,
+        ImageProcessingService $imageProcessor,
+        #[MapQueryParameter] string $size = 'full',
+        #[CurrentUser] ?User $user = null,
+    ): Response {
+        $photo = $photos->find(Uuid::fromString($id));
+        if ($photo === null) {
+            return $this->json(['error' => 'Photo not found.'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Enforce strict parent-child visibility invariant for unauthenticated guests (return 404 to prevent enumeration)
+        if ($user === null) {
+            $review = $photo->getReview();
+            $isVisibleToGuest = $photo->isPublic()
+                && $photo->getPoi()->isPublic()
+                && ($review === null || $review->isPublic());
+
+            if (!$isVisibleToGuest) {
+                return $this->json(['error' => 'Photo not found.'], Response::HTTP_NOT_FOUND);
+            }
+        }
+
+        if ($size !== 'thumb' && $size !== 'full') {
+            return $this->json(['error' => 'Invalid size parameter. Expected "thumb" or "full".'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $path = $imageProcessor->resolveFilePath($photo, $size);
+        if (!is_file($path)) {
+            return $this->json(['error' => 'Photo file not found on disk.'], Response::HTTP_NOT_FOUND);
+        }
+
+        $response = new BinaryFileResponse($path);
+        $response->headers->set('Content-Type', $photo->getMimeType());
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+        $response->headers->set('Cache-Control', $user === null ? 'public, max-age=86400' : 'private, max-age=86400');
+
+        return $response;
+    }
+}
