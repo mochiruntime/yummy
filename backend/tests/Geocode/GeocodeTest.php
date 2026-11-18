@@ -156,6 +156,28 @@ final class GeocodeTest extends WebTestCase
         self::assertSame(48.8540, $fallbackResults[0]['latitude']);
         self::assertSame(2.3670, $fallbackResults[0]['longitude']);
 
+        // Verify fallback cache entry recorded 'nominatim' as provider
+        $nominatimCached = $this->em->getRepository(GeocodeCache::class)->findBy(['provider' => 'nominatim']);
+        self::assertCount(1, $nominatimCached);
+        $totalBeforeFailure = count($this->em->getRepository(GeocodeCache::class)->findAll());
+
+        // Transient failure / empty results from both providers must NOT be cached
+        $failingClient = new MockHttpClient([
+            new MockResponse('', ['http_code' => 503]),
+            new MockResponse('', ['http_code' => 503]),
+        ]);
+        $cacheRepo = $this->em->getRepository(GeocodeCache::class);
+        \assert($cacheRepo instanceof \App\Repository\GeocodeCacheRepository);
+        $failingService = new GeocodingService(
+            $this->em,
+            $cacheRepo,
+            $failingClient,
+            'https://photon.komoot.io',
+            'https://nominatim.openstreetmap.org',
+        );
+        self::assertSame([], $failingService->search('unknown outage place'));
+        self::assertCount($totalBeforeFailure, $this->em->getRepository(GeocodeCache::class)->findAll());
+
         // Empty query returns []
         self::assertSame([], $fallbackService->search('   '));
 

@@ -270,6 +270,51 @@ final class PhotoTest extends WebTestCase
         );
         self::assertResponseStatusCodeSame(422);
 
+        // Pixel-flood / oversized dimensions guard rejects before full Imagick decoding
+        $strictService = new ImageProcessingService(sys_get_temp_dir(), maxInputDimension: 100, maxInputPixels: 10000);
+        $oversizedFile = new UploadedFile($this->createSyntheticJpegWithExif(200, 200), 'big.jpg', 'image/jpeg', null, true);
+        try {
+            $strictService->processAndStore($oversizedFile);
+            self::fail('Expected InvalidArgumentException for oversized image dimensions.');
+        } catch (\InvalidArgumentException $e) {
+            self::assertStringContainsString('dimensions exceed', $e->getMessage());
+        }
+
+        // Cross-user reviewId attachment is forbidden (even for Admins) -> 403
+        $managedPoi = $this->em->getRepository(Poi::class)->find($poi->getId());
+        $managedOther = $this->em->getRepository(User::class)->find($other->getId());
+        \assert($managedPoi instanceof Poi && $managedOther instanceof User);
+        $otherReview = new Review($managedPoi, $managedOther, 4, 'Other member review', true);
+        $admin = new User('admin@yummy.test', 'Admin', ['ROLE_ADMIN']);
+        $this->em->persist($otherReview);
+        $this->em->persist($admin);
+        $this->em->flush();
+
+        $crossUserFile = new UploadedFile($this->createSyntheticJpegWithExif(400, 400), 'cross.jpg', 'image/jpeg', null, true);
+        $this->client->request(
+            'POST',
+            '/api/pois/'.$poi->getId()->toRfc4122().'/photos',
+            ['reviewId' => $otherReview->getId()->toRfc4122()],
+            ['file' => $crossUserFile],
+            ['HTTP_X_XSRF_TOKEN' => $csrf],
+        );
+        self::assertResponseStatusCodeSame(403);
+
+        $this->client->loginUser($admin);
+        $csrfAdmin = $this->fetchCsrfToken();
+        $adminCrossFile = new UploadedFile($this->createSyntheticJpegWithExif(400, 400), 'admin_cross.jpg', 'image/jpeg', null, true);
+        $this->client->request(
+            'POST',
+            '/api/pois/'.$poi->getId()->toRfc4122().'/photos',
+            ['reviewId' => $otherReview->getId()->toRfc4122()],
+            ['file' => $adminCrossFile],
+            ['HTTP_X_XSRF_TOKEN' => $csrfAdmin],
+        );
+        self::assertResponseStatusCodeSame(403);
+
+        $this->client->loginUser($owner);
+        $csrf = $this->fetchCsrfToken();
+
         // Valid upload with explicit string 'false' for isPublic -> must coerce to false
         $goodFile = new UploadedFile($this->createSyntheticJpegWithExif(500, 500), 'ok.jpg', 'image/jpeg', null, true);
         $this->client->request(

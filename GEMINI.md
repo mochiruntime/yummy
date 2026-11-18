@@ -40,6 +40,9 @@
   - All state-mutating requests (`POST`, `PATCH`, `PUT`, `DELETE`) require a valid `X-XSRF-TOKEN` cookie/header pair.
 - **Third-Party API Privacy**:
   - External search services (e.g. Photon, Nominatim) must be proxied through the backend with MariaDB query caching to protect client IP addresses and respect upstream rate limits.
+- **Media & Cache Guardrails**:
+  - Pre-check uploaded image dimensions via `getimagesize()` before `Imagick` decodes pixels, and keep `Imagick::RESOURCETYPE_AREA` / `RESOURCETYPE_MEMORY` calibrated in bytes (~8 bytes/pixel for Q16 RGBA) so legitimate 48 MP+ phone photos succeed while pixel floods are rejected.
+  - Never persist empty or failed upstream responses into long-TTL caches such as `geocode_cache`, and always record the actual provider that served the response.
 
 ## 6. Testing & Quality Requirements
 - **Coverage Target**: Maintain $\ge 90\%$ line coverage across all backend services, controllers, and entities.
@@ -61,4 +64,4 @@
 - **Declarative UUID Route Requirements**:
   - Enforce UUID path parameter syntax on `#[Route]` attributes using `requirements: ['id' => Requirement::UUID]` (returning HTTP `404` automatically on malformed IDs) instead of repeating `Uuid::isValid()` inside controller actions.
 - **Voter-Based Resource Ownership**:
-  - Check ownership/admin permissions via `$this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $entity)` rather than duplicating inline author/owner/admin conditionals across controllers, and keep method `@param` docblocks synchronized when removing unused `$user` parameters.
+  - Centralize all ownership checks in `ResourceOwnerVoter` rather than duplicating inline author/owner/admin conditionals across controllers: use `ResourceOwnerVoter::MANAGE` for moderation/management actions (owner/author or `ROLE_ADMIN`) and `ResourceOwnerVoter::OWN` for strict author-only actions (e.g. attaching photos to a review). Keep method `@param` docblocks synchronized when removing unused `$user` parameters.

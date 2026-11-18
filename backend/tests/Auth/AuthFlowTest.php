@@ -297,6 +297,29 @@ final class AuthFlowTest extends WebTestCase
         $this->client->request('POST', '/api/auth/logout', [], [], ['HTTP_X_XSRF_TOKEN' => $csrf]);
         $csrf = $this->fetchCsrfToken();
 
+        // Rate limiter on POST /api/auth/magic-link/verify blocks excessive attempts (429 after 10)
+        for ($i = 0; $i < 10; ++$i) {
+            $this->client->request(
+                'POST',
+                '/api/auth/magic-link/verify',
+                [],
+                [],
+                ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrf],
+                json_encode(['token' => str_repeat('a', 64)], JSON_THROW_ON_ERROR),
+            );
+            self::assertResponseStatusCodeSame(400);
+        }
+
+        $this->client->request(
+            'POST',
+            '/api/auth/magic-link/verify',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrf],
+            json_encode(['token' => str_repeat('a', 64)], JSON_THROW_ON_ERROR),
+        );
+        self::assertResponseStatusCodeSame(429);
+
         $this->client->request(
             'POST',
             '/api/auth/invites/'.$rawToken.'/claim',

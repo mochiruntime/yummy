@@ -68,13 +68,15 @@ final class PhotoController extends AbstractController
             return $this->json(['error' => 'Missing "file" upload in multipart request.'], Response::HTTP_BAD_REQUEST);
         }
 
-        // Validate optional reviewId belongs to this same POI
+        // Validate optional reviewId belongs to this same POI and is owned by the uploader
         $review = null;
         if ($dto->reviewId !== null && $dto->reviewId !== '') {
             $review = $reviews->find(Uuid::fromString($dto->reviewId));
             if (!$review instanceof Review || $review->getPoi()->getId()->toRfc4122() !== $poi->getId()->toRfc4122()) {
                 return $this->json(['error' => 'Target review not found on this POI.'], Response::HTTP_NOT_FOUND);
             }
+
+            $this->denyAccessUnlessGranted(ResourceOwnerVoter::OWN, $review);
         }
 
         $caption = trim((string) $dto->caption);

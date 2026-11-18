@@ -25,6 +25,7 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
 final class ResourceOwnerVoter extends Voter
 {
     public const MANAGE = 'RESOURCE_MANAGE';
+    public const OWN = 'RESOURCE_OWN';
 
     public function __construct(
         private readonly Security $security,
@@ -36,7 +37,7 @@ final class ResourceOwnerVoter extends Voter
      */
     protected function supports(string $attribute, mixed $subject): bool
     {
-        if ($attribute !== self::MANAGE) {
+        if ($attribute !== self::MANAGE && $attribute !== self::OWN) {
             return false;
         }
 
@@ -48,7 +49,7 @@ final class ResourceOwnerVoter extends Voter
     }
 
     /**
-     * Grants access if the authenticated user is an admin or the subject's owner/author.
+     * Grants access if the user is the subject's owner/author (or an admin for MANAGE).
      */
     protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
     {
@@ -57,7 +58,7 @@ final class ResourceOwnerVoter extends Voter
             return false;
         }
 
-        if ($this->security->isGranted('ROLE_ADMIN')) {
+        if ($attribute === self::MANAGE && $this->security->isGranted('ROLE_ADMIN')) {
             return true;
         }
 

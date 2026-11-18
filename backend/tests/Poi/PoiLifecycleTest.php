@@ -129,6 +129,10 @@ final class PoiLifecycleTest extends WebTestCase
         // Out of range bbox
         $this->client->request('GET', '/api/pois?bbox=100,200,300,400');
         self::assertResponseStatusCodeSame(400);
+
+        // Invalid listIds UUID
+        $this->client->request('GET', '/api/pois?listIds=not-a-uuid');
+        self::assertResponseStatusCodeSame(400);
     }
 
     public function testCreatePoiWithRevision(): void

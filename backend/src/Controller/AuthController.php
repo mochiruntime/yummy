@@ -67,9 +67,16 @@ final class AuthController extends AbstractController
     #[Route('/api/auth/magic-link/verify', name: 'api_auth_magic_link_verify', methods: ['POST'])]
     public function verifyMagicLink(
         #[MapRequestPayload] MagicLinkVerifyDto $dto,
+        Request $request,
         AuthTokenService $authService,
         Security $security,
+        RateLimiterFactory $magicLinkVerifyLimiter,
     ): JsonResponse {
+        $limiter = $magicLinkVerifyLimiter->create($request->getClientIp() ?? 'anonymous');
+        if (!$limiter->consume()->isAccepted()) {
+            return $this->json(['error' => 'Too many attempts. Try again later.'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+
         $user = $authService->consumeMagicLink($dto->token);
         if ($user === null) {
             return $this->json(['error' => 'Invalid or expired magic link.'], Response::HTTP_BAD_REQUEST);

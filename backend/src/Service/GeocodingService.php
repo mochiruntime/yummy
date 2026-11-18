@@ -62,23 +62,27 @@ final class GeocodingService
         }
 
         // 1. Try primary provider: Photon (fast, typo-tolerant OpenStreetMap autocomplete)
+        $provider = 'photon';
         $results = $this->queryPhoton($normalized, $lat, $lng);
 
         // 2. Fall back to Nominatim if Photon failed, timed out, or returned no features
         if ($results === []) {
+            $provider = 'nominatim';
             $results = $this->queryNominatim($normalized);
         }
 
-        // Persist valid results into database cache
-        $entry = new GeocodeCache(
-            $hashKey,
-            'photon',
-            $results,
-            new \DateTimeImmutable(self::CACHE_TTL),
-        );
+        // Only cache non-empty results so transient upstream outages do not poison the 30-day cache
+        if ($results !== []) {
+            $entry = new GeocodeCache(
+                $hashKey,
+                $provider,
+                $results,
+                new \DateTimeImmutable(self::CACHE_TTL),
+            );
 
-        $this->em->persist($entry);
-        $this->em->flush();
+            $this->em->persist($entry);
+            $this->em->flush();
+        }
 
         return $results;
     }

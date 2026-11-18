@@ -35,6 +35,8 @@ final class ImageProcessingService
 
     public function __construct(
         private readonly string $photoStorageDir,
+        private readonly int $maxInputDimension = 12000,
+        private readonly int $maxInputPixels = 100_000_000,
     ) {
     }
 
@@ -76,7 +78,18 @@ final class ImageProcessingService
             throw new \RuntimeException('Imagick extension is required for EXIF-stripped image processing.');
         }
 
+        // Pre-check pixel dimensions from headers before full Imagick decoding to mitigate pixel-flood/OOM bombs
+        $dimensions = @getimagesize($file->getPathname());
+        if ($dimensions === false || $dimensions[0] <= 0 || $dimensions[1] <= 0) {
+            throw new \InvalidArgumentException('Unable to read image dimensions.');
+        }
+        if ($dimensions[0] > $this->maxInputDimension || $dimensions[1] > $this->maxInputDimension || ($dimensions[0] * $dimensions[1]) > $this->maxInputPixels) {
+            throw new \InvalidArgumentException(sprintf('Image dimensions exceed maximum allowed (%dpx per side, %d total pixels).', $this->maxInputDimension, $this->maxInputPixels));
+        }
+
         try {
+            \Imagick::setResourceLimit(\Imagick::RESOURCETYPE_AREA, 1024 * 1024 * 1024);
+            \Imagick::setResourceLimit(\Imagick::RESOURCETYPE_MEMORY, 512 * 1024 * 1024);
             $imagick = new \Imagick($file->getPathname());
 
             // Auto-orient pixels using EXIF Orientation tag BEFORE stripping EXIF metadata

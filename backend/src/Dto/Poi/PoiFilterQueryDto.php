@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Dto\Poi;
 
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -71,6 +72,23 @@ final class PoiFilterQueryDto
             'maxLng' => $parsed[2],
             'maxLat' => $parsed[3],
         ];
+    }
+
+    /**
+     * Validates that every comma-separated token in listIds is a valid UUID.
+     */
+    #[Assert\Callback]
+    public function validateListIds(ExecutionContextInterface $context): void
+    {
+        foreach ($this->toListIds() as $id) {
+            if (!Uuid::isValid($id)) {
+                $context->buildViolation('Each listId must be a valid UUID.')
+                    ->atPath('listIds')
+                    ->addViolation();
+
+                return;
+            }
+        }
     }
 
     /**
