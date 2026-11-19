@@ -43,12 +43,19 @@
 - **Media & Cache Guardrails**:
   - Pre-check uploaded image dimensions via `getimagesize()` before `Imagick` decodes pixels, and keep `Imagick::RESOURCETYPE_AREA` / `RESOURCETYPE_MEMORY` calibrated in bytes (~8 bytes/pixel for Q16 RGBA) so legitimate 48 MP+ phone photos succeed while pixel floods are rejected.
   - Never persist empty or failed upstream responses into long-TTL caches such as `geocode_cache`, and always record the actual provider that served the response.
+- **Firewall-First Access Control**:
+  - Enforce instance-wide access boundaries fail-closed in `backend/config/packages/security.yaml` `access_control` (explicit `PUBLIC_ACCESS` allowlist, `ROLE_ADMIN` prefix for `/api/auth/invites`, `IS_AUTHENTICATED_FULLY` for mutating methods, and `PUBLIC_BROWSING_OR_MEMBER` via `PublicBrowsingVoter`) rather than custom `KernelEvents::REQUEST` subscribers with hardcoded route lists.
+  - Keep `#[IsGranted('IS_AUTHENTICATED_FULLY')]` / `#[IsGranted('ROLE_ADMIN')]` on controller actions as explicit, self-documenting defense-in-depth.
 
 ## 6. Testing & Quality Requirements
 - **Coverage Target**: Maintain $\ge 90\%$ line coverage across all backend services, controllers, and entities.
 - **Meaningful State Assertions**: Tests must not merely check HTTP status codes. They must assert database state changes, entity attribute values, side effects, and concurrency conflict rejections.
 - **Database Isolation**: Tests rely on `dama/doctrine-test-bundle` transaction rollbacks (configured in `phpunit.xml.dist`) to guarantee zero cross-test state leakage without slow `TRUNCATE TABLE` / `DELETE` cleanup in `setUp()`.
 - **Zero External Dependencies**: External HTTP calls must be mocked with `MockHttpClient` and synthetic fixtures so test execution is offline, fast, and deterministic.
+- **Rate-Limiter & Cache Isolation**: Tests exercising `RateLimiterFactory` must clear `cache.rate_limiter` in `setUp()` because `dama/doctrine-test-bundle` only rolls back database transactions.
+- **DevContainer Execution & Env Separation**:
+  - Never set `DATABASE_URL` in `.devcontainer/compose.yaml` `environment:` (keep dev overrides in `backend/.env.dev` so `test` commands and `paratest` read `.env.test` and `TEST_TOKEN` suffixes cleanly).
+  - Run backend checks inside the container using `docker compose -f .devcontainer/compose.yaml exec -T app bash -lc "cd /workspaces/yummy/backend && ..."` (`composer phpstan`, `composer test:parallel`, `composer test:coverage`).
 
 ## 7. REST API Serdes, Routing & Authorization Conventions
 - **Typed Input DTOs & File Uploads**:
