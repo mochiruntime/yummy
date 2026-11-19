@@ -97,6 +97,42 @@ class ReactionRepository extends ServiceEntityRepository
     }
 
     /**
+     * Batch-aggregates direct POI-level reactions for multiple POIs in a single query, keyed by POI UUID.
+     *
+     * @param list<Uuid> $poiIds List of POI UUIDs
+     * @param User|null  $viewer Current authenticated user, or null for guests
+     *
+     * @return array<string, list<array{emoji: string, count: int, reactedByMe: bool}>>
+     */
+    public function getAggregatedForPois(array $poiIds, ?User $viewer): array
+    {
+        if ($poiIds === []) {
+            return [];
+        }
+
+        // Convert UUID objects to raw 16-byte binary strings for exact BINARY(16) IN (:poiIds) matching.
+        $binaryIds = array_map(static fn (Uuid $id): string => $id->toBinary(), $poiIds);
+
+        $qb = $this->createQueryBuilder('r')
+            ->innerJoin('r.user', 'u')
+            ->addSelect('u')
+            ->andWhere('r.poi IN (:poiIds)')
+            ->andWhere('r.targetType = :targetType')
+            ->setParameter('poiIds', $binaryIds)
+            ->setParameter('targetType', Reaction::TARGET_POI)
+            ->orderBy('r.createdAt', 'ASC');
+
+        if ($viewer === null) {
+            $qb->andWhere('r.isPublic = true');
+        }
+
+        /** @var list<Reaction> $rows */
+        $rows = $qb->getQuery()->getResult();
+
+        return $this->groupAndAggregateByTarget($rows, $viewer);
+    }
+
+    /**
      * Aggregates reactions for all reviews belonging to a POI in a single query, keyed by review UUID.
      *
      * @param Poi       $poi    Parent POI

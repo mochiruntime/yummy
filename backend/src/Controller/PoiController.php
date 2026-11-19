@@ -8,12 +8,14 @@ use App\Dto\Poi\PoiCreateInputDto;
 use App\Dto\Poi\PoiFilterQueryDto;
 use App\Dto\Poi\PoiUpdateInputDto;
 use App\Dto\Poi\VisibilityInputDto;
+use App\Entity\ActivityEvent;
 use App\Entity\Poi;
 use App\Entity\User;
 use App\Repository\PoiListRepository;
 use App\Repository\PoiRepository;
 use App\Repository\PoiRevisionRepository;
 use App\Security\Voter\ResourceOwnerVoter;
+use App\Service\ActivityFeedService;
 use App\Service\PoiDetailAssembler;
 use App\Service\PoiVersioningService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -75,6 +77,7 @@ final class PoiController extends AbstractController
         PoiListRepository $lists,
         PoiVersioningService $versioning,
         PoiDetailAssembler $detailAssembler,
+        ActivityFeedService $feedService,
         EntityManagerInterface $em,
     ): JsonResponse {
         $poi = new Poi(
@@ -103,6 +106,14 @@ final class PoiController extends AbstractController
             'initial' => true,
             'snapshot' => $versioning->buildSnapshot($poi),
         ]);
+        $feedService->recordEvent(
+            $user,
+            ActivityEvent::EVENT_POI_CREATED,
+            $poi,
+            ActivityEvent::TARGET_POI,
+            $poi->getId(),
+            $poi->isPublic(),
+        );
         $em->flush();
 
         return $this->json($detailAssembler->assemble($poi, $user), Response::HTTP_CREATED);
@@ -155,6 +166,7 @@ final class PoiController extends AbstractController
         PoiRepository $pois,
         PoiVersioningService $versioning,
         PoiDetailAssembler $detailAssembler,
+        ActivityFeedService $feedService,
         EntityManagerInterface $em,
     ): JsonResponse {
         $poi = $pois->find(Uuid::fromString($id));
@@ -211,6 +223,18 @@ final class PoiController extends AbstractController
             'snapshot' => $versioning->buildSnapshot($poi),
         ]);
 
+        if ($diff !== []) {
+            $feedService->recordEvent(
+                $user,
+                ActivityEvent::EVENT_POI_EDITED,
+                $poi,
+                ActivityEvent::TARGET_POI,
+                $poi->getId(),
+                $poi->isPublic(),
+                ['changedFields' => array_keys($diff)],
+            );
+        }
+
         $em->flush();
 
         return $this->json($detailAssembler->assemble($poi, $user));
@@ -219,10 +243,11 @@ final class PoiController extends AbstractController
     /**
      * Toggles the POI's public visibility flag (creator or Admin only).
      *
-     * @param string                 $id   UUID string of the target POI
-     * @param VisibilityInputDto     $dto  Validated boolean payload
-     * @param PoiRepository          $pois POI repository
-     * @param EntityManagerInterface $em   Doctrine entity manager
+     * @param string                 $id          UUID string of the target POI
+     * @param VisibilityInputDto     $dto         Validated boolean payload
+     * @param PoiRepository          $pois        POI repository
+     * @param ActivityFeedService    $feedService Activity feed service
+     * @param EntityManagerInterface $em          Doctrine entity manager
      */
     #[Route('/api/pois/{id}/visibility', name: 'api_pois_update_visibility', requirements: ['id' => Requirement::UUID], methods: ['PATCH'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
@@ -230,6 +255,7 @@ final class PoiController extends AbstractController
         string $id,
         #[MapRequestPayload] VisibilityInputDto $dto,
         PoiRepository $pois,
+        ActivityFeedService $feedService,
         EntityManagerInterface $em,
     ): JsonResponse {
         $poi = $pois->find(Uuid::fromString($id));
@@ -242,6 +268,8 @@ final class PoiController extends AbstractController
 
         $poi->setIsPublic($dto->isPublic);
         $em->flush();
+
+        $feedService->syncVisibility(ActivityEvent::TARGET_POI, $poi->getId(), $dto->isPublic);
 
         return $this->json($poi, context: ['groups' => ['poi:summary']]);
     }
@@ -316,6 +344,8 @@ final class PoiController extends AbstractController
         PoiRepository $pois,
         PoiVersioningService $versioning,
         PoiDetailAssembler $detailAssembler,
+        ActivityFeedService $feedService,
+        EntityManagerInterface $em,
     ): JsonResponse {
         $poi = $pois->find(Uuid::fromString($id));
         if ($poi === null) {
@@ -330,6 +360,17 @@ final class PoiController extends AbstractController
         if ($reverted === null) {
             return $this->json(['error' => 'Target revision not found or invalid.'], Response::HTTP_NOT_FOUND);
         }
+
+        $feedService->recordEvent(
+            $user,
+            ActivityEvent::EVENT_POI_EDITED,
+            $poi,
+            ActivityEvent::TARGET_POI,
+            $poi->getId(),
+            $poi->isPublic(),
+            ['revertedToRevision' => $revisionNumber],
+        );
+        $em->flush();
 
         return $this->json($detailAssembler->assemble($poi, $user));
     }

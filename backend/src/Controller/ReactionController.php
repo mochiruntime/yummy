@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Dto\Social\ReactionInputDto;
+use App\Entity\ActivityEvent;
 use App\Entity\Photo;
 use App\Entity\Poi;
 use App\Entity\Reaction;
@@ -14,6 +15,7 @@ use App\Repository\PhotoRepository;
 use App\Repository\PoiRepository;
 use App\Repository\ReactionRepository;
 use App\Repository\ReviewRepository;
+use App\Service\ActivityFeedService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -33,12 +35,13 @@ final class ReactionController extends AbstractController
     /**
      * Toggles an emoji reaction on a POI for the current authenticated user.
      *
-     * @param string                 $id        UUID string of the target POI
-     * @param ReactionInputDto       $dto       Validated emoji and optional isPublic flag
-     * @param User                   $user      Authenticated caller
-     * @param PoiRepository          $pois      POI repository
-     * @param ReactionRepository     $reactions Reaction repository
-     * @param EntityManagerInterface $em        Doctrine entity manager
+     * @param string                 $id          UUID string of the target POI
+     * @param ReactionInputDto       $dto         Validated emoji and optional isPublic flag
+     * @param User                   $user        Authenticated caller
+     * @param PoiRepository          $pois        POI repository
+     * @param ReactionRepository     $reactions   Reaction repository
+     * @param ActivityFeedService    $feedService Activity feed service
+     * @param EntityManagerInterface $em          Doctrine entity manager
      */
     #[Route('/api/pois/{id}/reactions', name: 'api_pois_toggle_reaction', requirements: ['id' => Requirement::UUID], methods: ['POST'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
@@ -48,6 +51,7 @@ final class ReactionController extends AbstractController
         #[CurrentUser] User $user,
         PoiRepository $pois,
         ReactionRepository $reactions,
+        ActivityFeedService $feedService,
         EntityManagerInterface $em,
     ): JsonResponse {
         $poi = $pois->find(Uuid::fromString($id));
@@ -64,6 +68,7 @@ final class ReactionController extends AbstractController
             $dto,
             $user,
             $reactions,
+            $feedService,
             $em,
         );
     }
@@ -71,12 +76,13 @@ final class ReactionController extends AbstractController
     /**
      * Toggles an emoji reaction on a Review for the current authenticated user.
      *
-     * @param string                 $id        UUID string of the target Review
-     * @param ReactionInputDto       $dto       Validated emoji and optional isPublic flag
-     * @param User                   $user      Authenticated caller
-     * @param ReviewRepository       $reviews   Review repository
-     * @param ReactionRepository     $reactions Reaction repository
-     * @param EntityManagerInterface $em        Doctrine entity manager
+     * @param string                 $id          UUID string of the target Review
+     * @param ReactionInputDto       $dto         Validated emoji and optional isPublic flag
+     * @param User                   $user        Authenticated caller
+     * @param ReviewRepository       $reviews     Review repository
+     * @param ReactionRepository     $reactions   Reaction repository
+     * @param ActivityFeedService    $feedService Activity feed service
+     * @param EntityManagerInterface $em          Doctrine entity manager
      */
     #[Route('/api/reviews/{id}/reactions', name: 'api_reviews_toggle_reaction', requirements: ['id' => Requirement::UUID], methods: ['POST'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
@@ -86,6 +92,7 @@ final class ReactionController extends AbstractController
         #[CurrentUser] User $user,
         ReviewRepository $reviews,
         ReactionRepository $reactions,
+        ActivityFeedService $feedService,
         EntityManagerInterface $em,
     ): JsonResponse {
         $review = $reviews->find(Uuid::fromString($id));
@@ -102,6 +109,7 @@ final class ReactionController extends AbstractController
             $dto,
             $user,
             $reactions,
+            $feedService,
             $em,
         );
     }
@@ -109,12 +117,13 @@ final class ReactionController extends AbstractController
     /**
      * Toggles an emoji reaction on a Photo for the current authenticated user.
      *
-     * @param string                 $id        UUID string of the target Photo
-     * @param ReactionInputDto       $dto       Validated emoji and optional isPublic flag
-     * @param User                   $user      Authenticated caller
-     * @param PhotoRepository        $photos    Photo repository
-     * @param ReactionRepository     $reactions Reaction repository
-     * @param EntityManagerInterface $em        Doctrine entity manager
+     * @param string                 $id          UUID string of the target Photo
+     * @param ReactionInputDto       $dto         Validated emoji and optional isPublic flag
+     * @param User                   $user        Authenticated caller
+     * @param PhotoRepository        $photos      Photo repository
+     * @param ReactionRepository     $reactions   Reaction repository
+     * @param ActivityFeedService    $feedService Activity feed service
+     * @param EntityManagerInterface $em          Doctrine entity manager
      */
     #[Route('/api/photos/{id}/reactions', name: 'api_photos_toggle_reaction', requirements: ['id' => Requirement::UUID], methods: ['POST'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
@@ -124,6 +133,7 @@ final class ReactionController extends AbstractController
         #[CurrentUser] User $user,
         PhotoRepository $photos,
         ReactionRepository $reactions,
+        ActivityFeedService $feedService,
         EntityManagerInterface $em,
     ): JsonResponse {
         $photo = $photos->find(Uuid::fromString($id));
@@ -140,6 +150,7 @@ final class ReactionController extends AbstractController
             $dto,
             $user,
             $reactions,
+            $feedService,
             $em,
         );
     }
@@ -156,19 +167,39 @@ final class ReactionController extends AbstractController
         ReactionInputDto $dto,
         User $user,
         ReactionRepository $reactions,
+        ActivityFeedService $feedService,
         EntityManagerInterface $em,
     ): JsonResponse {
         $existing = $reactions->findOneByTargetUserAndEmoji($targetType, $targetId, $user, $dto->emoji);
+        $removedReactionId = null;
         if ($existing !== null) {
+            $removedReactionId = $existing->getId();
             $em->remove($existing);
             $reacted = false;
         } else {
             $reaction = new Reaction($poi, $user, $dto->emoji, $dto->isPublic, $review, $photo);
             $em->persist($reaction);
+            $feedService->recordEvent(
+                $user,
+                ActivityEvent::EVENT_REACTION_ADDED,
+                $poi,
+                ActivityEvent::TARGET_REACTION,
+                $reaction->getId(),
+                $reaction->isPublic(),
+                [
+                    'emoji' => $dto->emoji,
+                    'targetType' => $targetType,
+                    'targetId' => $targetId->toRfc4122(),
+                ],
+            );
             $reacted = true;
         }
 
         $em->flush();
+
+        if ($removedReactionId !== null) {
+            $feedService->deleteForTarget(ActivityEvent::TARGET_REACTION, $removedReactionId);
+        }
 
         return $this->json([
             'reacted' => $reacted,

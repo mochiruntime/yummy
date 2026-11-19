@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Dto\Poi\VisibilityInputDto;
 use App\Dto\Social\PhotoUploadInputDto;
+use App\Entity\ActivityEvent;
 use App\Entity\Photo;
 use App\Entity\Review;
 use App\Entity\User;
@@ -13,6 +14,7 @@ use App\Repository\PhotoRepository;
 use App\Repository\PoiRepository;
 use App\Repository\ReviewRepository;
 use App\Security\Voter\ResourceOwnerVoter;
+use App\Service\ActivityFeedService;
 use App\Service\ImageProcessingService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -42,6 +44,7 @@ final class PhotoController extends AbstractController
      * @param PoiRepository            $pois           POI repository
      * @param ReviewRepository         $reviews        Review repository
      * @param ImageProcessingService   $imageProcessor EXIF-stripping and thumbnailing service
+     * @param ActivityFeedService      $feedService    Activity feed service
      * @param EntityManagerInterface   $em             Doctrine entity manager
      * @param PhotoUploadInputDto|null $dto            Validated multipart metadata (caption, reviewId, isPublic)
      * @param UploadedFile|null        $file           Uploaded image file
@@ -54,6 +57,7 @@ final class PhotoController extends AbstractController
         PoiRepository $pois,
         ReviewRepository $reviews,
         ImageProcessingService $imageProcessor,
+        ActivityFeedService $feedService,
         EntityManagerInterface $em,
         #[MapRequestPayload] ?PhotoUploadInputDto $dto = null,
         #[MapUploadedFile] ?UploadedFile $file = null,
@@ -100,6 +104,15 @@ final class PhotoController extends AbstractController
         );
 
         $em->persist($photo);
+        $feedService->recordEvent(
+            $user,
+            ActivityEvent::EVENT_PHOTO_ADDED,
+            $poi,
+            ActivityEvent::TARGET_PHOTO,
+            $photo->getId(),
+            $photo->isPublic(),
+            $review !== null ? ['reviewId' => $review->getId()->toRfc4122()] : [],
+        );
         $em->flush();
 
         return $this->json($photo, Response::HTTP_CREATED, context: ['groups' => ['photo:read']]);
@@ -108,10 +121,11 @@ final class PhotoController extends AbstractController
     /**
      * Toggles the public visibility flag on a single photo (uploader or Admin only).
      *
-     * @param string                 $id     UUID string of the target photo
-     * @param VisibilityInputDto     $dto    Validated visibility payload
-     * @param PhotoRepository        $photos Photo repository
-     * @param EntityManagerInterface $em     Doctrine entity manager
+     * @param string                 $id          UUID string of the target photo
+     * @param VisibilityInputDto     $dto         Validated visibility payload
+     * @param PhotoRepository        $photos      Photo repository
+     * @param ActivityFeedService    $feedService Activity feed service
+     * @param EntityManagerInterface $em          Doctrine entity manager
      */
     #[Route('/api/photos/{id}/visibility', name: 'api_photos_update_visibility', requirements: ['id' => Requirement::UUID], methods: ['PATCH'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
@@ -119,6 +133,7 @@ final class PhotoController extends AbstractController
         string $id,
         #[MapRequestPayload] VisibilityInputDto $dto,
         PhotoRepository $photos,
+        ActivityFeedService $feedService,
         EntityManagerInterface $em,
     ): JsonResponse {
         $photo = $photos->find(Uuid::fromString($id));
@@ -131,6 +146,8 @@ final class PhotoController extends AbstractController
         $photo->setIsPublic($dto->isPublic);
         $em->flush();
 
+        $feedService->syncVisibility(ActivityEvent::TARGET_PHOTO, $photo->getId(), $dto->isPublic);
+
         return $this->json($photo, context: ['groups' => ['photo:read']]);
     }
 
@@ -140,6 +157,7 @@ final class PhotoController extends AbstractController
      * @param string                 $id             UUID string of the target photo
      * @param PhotoRepository        $photos         Photo repository
      * @param ImageProcessingService $imageProcessor Service to clean up stored files
+     * @param ActivityFeedService    $feedService    Activity feed service
      * @param EntityManagerInterface $em             Doctrine entity manager
      */
     #[Route('/api/photos/{id}', name: 'api_photos_delete', requirements: ['id' => Requirement::UUID], methods: ['DELETE'])]
@@ -148,6 +166,7 @@ final class PhotoController extends AbstractController
         string $id,
         PhotoRepository $photos,
         ImageProcessingService $imageProcessor,
+        ActivityFeedService $feedService,
         EntityManagerInterface $em,
     ): JsonResponse {
         $photo = $photos->find(Uuid::fromString($id));
@@ -157,9 +176,12 @@ final class PhotoController extends AbstractController
 
         $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $photo);
 
+        $photoId = $photo->getId();
         $imageProcessor->deleteFiles($photo);
         $em->remove($photo);
         $em->flush();
+
+        $feedService->deleteForTarget(ActivityEvent::TARGET_PHOTO, $photoId);
 
         return new JsonResponse(null, Response::HTTP_NO_CONTENT);
     }
