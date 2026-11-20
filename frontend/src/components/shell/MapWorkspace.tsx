@@ -2,15 +2,20 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Filter, List, MapPin, Plus, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
+import { ApiError } from "../../api/client";
 import { fetchLists, listKeys } from "../../api/lists";
 import { fetchPois, poiKeys, searchGeocode } from "../../api/pois";
-import type { BBox, GeocodeResult, PoiList, PoiSummary } from "../../api/types";
+import type { BBox, GeocodeResult, PoiDetail, PoiList, PoiSummary } from "../../api/types";
 import { useAuth } from "../../context/AuthContext";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { ListManagerModal } from "../lists/ListManagerModal";
 import { ListsTabPanel } from "../lists/ListsTabPanel";
 import { GoogleMapsConsentModal } from "../map/GoogleMapsConsentModal";
 import { MapLibreCanvas } from "../map/MapLibreCanvas";
+import { CreatePoiModal } from "../pois/CreatePoiModal";
+import { EditPoiModal } from "../pois/EditPoiModal";
+import { PoiDetailPanel } from "../pois/PoiDetailPanel";
+import { PoiRevisionsModal } from "../pois/PoiRevisionsModal";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
 import { BottomSheet, type SheetSnap } from "./BottomSheet";
 import { SpotsTabPanel } from "./SpotsTabPanel";
@@ -35,10 +40,11 @@ function parseListIdsParam(searchString: string): string[] {
 
 export interface MapWorkspaceProps {
   sharedListId?: string;
+  selectedPoiRouteId?: string;
   onOpenSignIn: () => void;
 }
 
-export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) {
+export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }: MapWorkspaceProps) {
   const { config, user, isAdmin, signOut } = useAuth();
   const isDesktop = useIsDesktop();
   const searchString = useSearch();
@@ -56,15 +62,30 @@ export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) 
   const [bbox, setBbox] = useState<BBox | null>(null);
   const [searchText, setSearchText] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [selectedPoiId, setSelectedPoiId] = useState<string | null>(null);
+  const [selectedPoiId, setSelectedPoiId] = useState<string | null>(selectedPoiRouteId ?? null);
+  const [prevRoutePoiId, setPrevRoutePoiId] = useState<string | undefined>(selectedPoiRouteId);
   const [flyToTarget, setFlyToTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(
     null,
   );
-  const [sheetSnap, setSheetSnap] = useState<SheetSnap>("peek");
+  const [sheetSnap, setSheetSnap] = useState<SheetSnap>(selectedPoiRouteId ? "half" : "peek");
   const [listManagerOpen, setListManagerOpen] = useState(false);
   const [editingList, setEditingList] = useState<PoiList | null>(null);
+  const [createPoiOpen, setCreatePoiOpen] = useState(false);
+  const [editingPoiDetail, setEditingPoiDetail] = useState<PoiDetail | null>(null);
+  const [historyPoi, setHistoryPoi] = useState<{ id: string; name: string; version: number; canManage: boolean } | null>(
+    null,
+  );
   const [pinDropMode, setPinDropMode] = useState(false);
   const [droppedCoords, setDroppedCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  if (selectedPoiRouteId !== prevRoutePoiId) {
+    setPrevRoutePoiId(selectedPoiRouteId);
+    setSelectedPoiId(selectedPoiRouteId ?? null);
+    if (selectedPoiRouteId) {
+      setActiveTab("spots");
+      setSheetSnap("half");
+    }
+  }
 
   // Privacy-first renderer state: always defaults to MapLibre; consent lives in memory only.
   const [renderer, setRenderer] = useState<"maplibre" | "google">("maplibre");
@@ -120,11 +141,28 @@ export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) 
     placeholderData: keepPreviousData,
   });
 
+  const mapCenter = useMemo(() => {
+    if (!bbox) {
+      return null;
+    }
+    return {
+      lat: Number(((bbox.minLat + bbox.maxLat) / 2).toFixed(2)),
+      lng: Number(((bbox.minLng + bbox.maxLng) / 2).toFixed(2)),
+    };
+  }, [bbox]);
+
   const geocodeQuery = useQuery({
-    queryKey: ["geocode", debouncedQuery],
-    queryFn: ({ signal }) => searchGeocode({ q: debouncedQuery, signal }),
-    enabled: user !== null && debouncedQuery.length >= 2,
+    queryKey: ["geocode", debouncedQuery, mapCenter?.lat ?? null, mapCenter?.lng ?? null],
+    queryFn: ({ signal }) =>
+      searchGeocode({
+        q: debouncedQuery,
+        lat: mapCenter?.lat,
+        lng: mapCenter?.lng,
+        signal,
+      }),
+    enabled: debouncedQuery.length >= 2,
     staleTime: 60_000,
+    retry: false,
   });
 
   const lists = useMemo(() => listsQuery.data ?? [], [listsQuery.data]);
@@ -156,6 +194,24 @@ export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) 
     }
     return poisQuery.data.map((p) => ({ lat: p.latitude, lng: p.longitude }));
   }, [isSharedListRoute, isValidSharedListId, poisQuery.data]);
+
+  const handleOpenAddPlace = () => {
+    setPinDropMode(false);
+    setDroppedCoords(null);
+    setCreatePoiOpen(true);
+  };
+
+  const handleMapClick = useCallback(
+    (coords: { lat: number; lng: number }) => {
+      if (!pinDropMode) {
+        return;
+      }
+      setDroppedCoords(coords);
+      setPinDropMode(false);
+      setCreatePoiOpen(true);
+    },
+    [pinDropMode],
+  );
 
   const handleSelectPoi = useCallback((poi: PoiSummary) => {
     setSelectedPoiId(poi.id);
@@ -235,23 +291,53 @@ export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) 
 
   const panelBody =
     currentTab === "spots" ? (
-      <SpotsTabPanel
-        pois={filteredPois}
-        isLoading={poisQuery.isPending}
-        selectedPoiId={selectedPoiId}
-        onSelectPoi={handleSelectPoi}
-        isSharedListRoute={isSharedListRoute}
-        isValidSharedListId={isValidSharedListId}
-        sharedList={sharedList}
-        isListsLoading={listsQuery.isPending}
-        isAuthenticated={user !== null}
-        pinDropMode={pinDropMode}
-        droppedCoords={droppedCoords}
-        onCancelPinDrop={() => {
-          setPinDropMode(false);
-          setDroppedCoords(null);
-        }}
-      />
+      selectedPoiId ? (
+        <PoiDetailPanel
+          poiId={selectedPoiId}
+          lists={lists}
+          currentUser={user}
+          isAdmin={isAdmin}
+          onBack={() => {
+            setSelectedPoiId(null);
+            if (selectedPoiRouteId) {
+              navigate("/");
+            }
+          }}
+          onEdit={(detail) => setEditingPoiDetail(detail)}
+          onOpenHistory={(detail) =>
+            setHistoryPoi({
+              id: detail.id,
+              name: detail.name,
+              version: detail.version,
+              canManage: Boolean(user && (isAdmin || detail.createdBy?.id === user.id)),
+            })
+          }
+          onDeleted={() => {
+            setSelectedPoiId(null);
+            if (selectedPoiRouteId) {
+              navigate("/");
+            }
+          }}
+        />
+      ) : (
+        <SpotsTabPanel
+          pois={filteredPois}
+          isLoading={poisQuery.isPending}
+          selectedPoiId={selectedPoiId}
+          onSelectPoi={handleSelectPoi}
+          isSharedListRoute={isSharedListRoute}
+          isValidSharedListId={isValidSharedListId}
+          sharedList={sharedList}
+          isListsLoading={listsQuery.isPending}
+          isAuthenticated={user !== null}
+          pinDropMode={pinDropMode}
+          droppedCoords={droppedCoords}
+          onCancelPinDrop={() => {
+            setPinDropMode(false);
+            setDroppedCoords(null);
+          }}
+        />
+      )
     ) : (
       <ListsTabPanel
         lists={lists}
@@ -283,7 +369,10 @@ export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) 
           setDebouncedQuery("");
         }}
         geocodeSuggestions={geocodeQuery.data ?? []}
-        showGeocodeDropdown={user !== null && debouncedQuery.length >= 2}
+        showGeocodeDropdown={debouncedQuery.length >= 2}
+        geocodeRateLimited={
+          geocodeQuery.error instanceof ApiError && geocodeQuery.error.status === 429
+        }
         onSelectGeocode={handleSelectGeocode}
         canUseGoogleMaps={Boolean(config?.googleMapsEnabled && config.googleMapsApiKey)}
         renderer={renderer}
@@ -303,14 +392,11 @@ export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) 
               {user && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setPinDropMode((v) => !v);
-                    setDroppedCoords(null);
-                  }}
+                  onClick={handleOpenAddPlace}
                   className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-brand)] px-3 text-xs font-semibold text-white hover:opacity-90"
                 >
                   <Plus aria-hidden="true" className="h-4 w-4" />
-                  Drop Pin
+                  Add place
                 </button>
               )}
             </div>
@@ -358,7 +444,7 @@ export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) 
                   fitBoundsKey={sharedListId ?? null}
                   onBoundsChange={setBbox}
                   onSelectPoi={handleSelectPoi}
-                  onMapClick={(coords) => setDroppedCoords(coords)}
+                  onMapClick={handleMapClick}
                 />
               </Suspense>
             ) : (
@@ -373,7 +459,7 @@ export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) 
                 fitBoundsKey={sharedListId ?? null}
                 onBoundsChange={setBbox}
                 onSelectPoi={handleSelectPoi}
-                onMapClick={(coords) => setDroppedCoords(coords)}
+                onMapClick={handleMapClick}
               />
             )}
           </ErrorBoundary>
@@ -381,16 +467,13 @@ export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) 
           {!isDesktop && user && (
             <button
               type="button"
-              onClick={() => {
-                setPinDropMode((v) => !v);
-                setDroppedCoords(null);
-              }}
-              aria-label="Drop Pin"
+              onClick={handleOpenAddPlace}
+              aria-label="Add place"
               className="fixed right-4 bottom-28 z-20 inline-flex min-h-12 items-center gap-1.5 rounded-full bg-[var(--accent-brand)] px-4 text-sm font-semibold text-white shadow-lg hover:opacity-90"
               style={{ marginBottom: "env(safe-area-inset-bottom)" }}
             >
               <Plus aria-hidden="true" className="h-5 w-5" />
-              <span>Drop Pin</span>
+              <span>Add place</span>
             </button>
           )}
         </div>
@@ -436,6 +519,59 @@ export function MapWorkspace({ sharedListId, onOpenSignIn }: MapWorkspaceProps) 
               setListManagerOpen(false);
               setEditingList(null);
             }}
+          />
+        )}
+
+        {createPoiOpen && user && (
+          <CreatePoiModal
+            lists={lists}
+            currentUser={user}
+            isAdmin={isAdmin}
+            initialCoords={droppedCoords}
+            mapCenter={mapCenter}
+            onPickOnMap={() => {
+              setCreatePoiOpen(false);
+              setSelectedPoiId(null);
+              setActiveTab("spots");
+              setSheetSnap("peek");
+              setPinDropMode(true);
+            }}
+            onCreated={(detail) => {
+              setCreatePoiOpen(false);
+              setDroppedCoords(null);
+              setSelectedPoiId(detail.id);
+              setActiveTab("spots");
+              setFlyToTarget({ lat: detail.latitude, lng: detail.longitude, zoom: 15 });
+            }}
+            onClose={() => {
+              setCreatePoiOpen(false);
+              setDroppedCoords(null);
+            }}
+          />
+        )}
+
+        {editingPoiDetail && (
+          <EditPoiModal
+            detail={editingPoiDetail}
+            onUpdated={(updated) => {
+              setEditingPoiDetail(null);
+              setFlyToTarget({ lat: updated.latitude, lng: updated.longitude });
+            }}
+            onClose={() => setEditingPoiDetail(null)}
+          />
+        )}
+
+        {historyPoi && (
+          <PoiRevisionsModal
+            poiId={historyPoi.id}
+            poiName={historyPoi.name}
+            currentVersion={historyPoi.version}
+            canManage={historyPoi.canManage}
+            onReverted={(reverted) => {
+              setHistoryPoi(null);
+              setFlyToTarget({ lat: reverted.latitude, lng: reverted.longitude });
+            }}
+            onClose={() => setHistoryPoi(null)}
           />
         )}
       </div>

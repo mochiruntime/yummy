@@ -28,3 +28,17 @@ export function deleteList(id: string): Promise<void> {
     method: "DELETE",
   });
 }
+
+export function addPoiToList(listId: string, poiId: string): Promise<void> {
+  return apiFetch<void>(
+    `/api/lists/${encodeURIComponent(listId)}/pois/${encodeURIComponent(poiId)}`,
+    { method: "POST" },
+  );
+}
+
+export function removePoiFromList(listId: string, poiId: string): Promise<void> {
+  return apiFetch<void>(
+    `/api/lists/${encodeURIComponent(listId)}/pois/${encodeURIComponent(poiId)}`,
+    { method: "DELETE" },
+  );
+}

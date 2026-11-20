@@ -10,6 +10,7 @@ export interface TopNavBarProps {
   onClearSearch: () => void;
   geocodeSuggestions: GeocodeResult[];
   showGeocodeDropdown: boolean;
+  geocodeRateLimited?: boolean;
   onSelectGeocode: (result: GeocodeResult) => void;
   canUseGoogleMaps: boolean;
   renderer: "maplibre" | "google";
@@ -30,6 +31,7 @@ export function TopNavBar({
   onClearSearch,
   geocodeSuggestions,
   showGeocodeDropdown,
+  geocodeRateLimited = false,
   onSelectGeocode,
   canUseGoogleMaps,
   renderer,
@@ -55,7 +57,7 @@ export function TopNavBar({
           aria-label="Search places"
           value={searchText}
           onChange={(e) => onSearchTextChange(e.target.value)}
-          placeholder={user ? "Search spots or jump to an address…" : "Filter public spots…"}
+          placeholder="Search spots or jump to an address…"
           className="min-h-11 w-full rounded-xl border border-black/15 bg-[var(--surface-primary)] py-2 pl-9 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-brand)] focus:outline-none dark:border-white/15"
         />
         {searchText && (
@@ -69,7 +71,16 @@ export function TopNavBar({
           </button>
         )}
 
-        {showGeocodeDropdown && geocodeSuggestions.length > 0 && (
+        {showGeocodeDropdown && geocodeRateLimited && (
+          <div
+            role="status"
+            className="absolute left-0 right-0 top-12 z-40 rounded-2xl border border-amber-500/30 bg-[var(--surface-primary)] px-3.5 py-2.5 text-xs text-amber-800 shadow-xl dark:text-amber-200"
+          >
+            Too many searches — please wait a moment.
+          </div>
+        )}
+
+        {showGeocodeDropdown && !geocodeRateLimited && geocodeSuggestions.length > 0 && (
           <ul
             aria-label="Address suggestions"
             className="absolute left-0 right-0 top-12 z-40 max-h-72 overflow-y-auto rounded-2xl border border-black/10 bg-[var(--surface-primary)] p-1 shadow-xl dark:border-white/15"

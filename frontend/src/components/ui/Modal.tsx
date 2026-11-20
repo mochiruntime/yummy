@@ -25,7 +25,7 @@ export function Modal({ title, closeLabel = "Close dialog", onClose, children }:
     firstTarget?.focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !e.defaultPrevented) {
         onClose();
       }
     };
