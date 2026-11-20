@@ -52,6 +52,14 @@ class Photo
     private ?Review $review;
 
     /**
+     * Optional ordered dish/item within a review this photo depicts (nullable).
+     * Set to NULL via ON DELETE SET NULL if the item or review is removed.
+     */
+    #[ORM\ManyToOne(targetEntity: ReviewItem::class)]
+    #[ORM\JoinColumn(name: 'review_item_id', nullable: true, onDelete: 'SET NULL')]
+    private ?ReviewItem $reviewItem = null;
+
+    /**
      * Member who uploaded the photo. Deleted via CASCADE if the uploader is removed.
      */
     #[ORM\ManyToOne(targetEntity: User::class)]
@@ -115,9 +123,10 @@ class Photo
      * @param string      $mimeType   Sanitized MIME type
      * @param int         $width      Full variant width in pixels
      * @param int         $height     Full variant height in pixels
-     * @param Review|null $review     Optional attached review
-     * @param string|null $caption    Optional caption
-     * @param bool        $isPublic   Whether visible to guests when parents are public
+     * @param Review|null     $review     Optional attached review
+     * @param string|null     $caption    Optional caption
+     * @param bool            $isPublic   Whether visible to guests when parents are public
+     * @param ReviewItem|null $reviewItem Optional attached ordered dish/drink item
      */
     public function __construct(
         Poi $poi,
@@ -129,6 +138,7 @@ class Photo
         ?Review $review = null,
         ?string $caption = null,
         bool $isPublic = false,
+        ?ReviewItem $reviewItem = null,
     ) {
         $this->id = Uuid::v7();
         $this->poi = $poi;
@@ -138,6 +148,7 @@ class Photo
         $this->width = $width;
         $this->height = $height;
         $this->review = $review;
+        $this->reviewItem = $reviewItem;
         $this->caption = $caption !== null && trim($caption) !== '' ? trim($caption) : null;
         $this->isPublic = $isPublic;
         $this->createdAt = new \DateTimeImmutable();
@@ -175,6 +186,24 @@ class Photo
     public function getReviewId(): ?string
     {
         return $this->review?->getId()->toRfc4122();
+    }
+
+    /**
+     * Returns the attached ReviewItem entity, or null if not linked to a specific dish/item.
+     */
+    public function getReviewItem(): ?ReviewItem
+    {
+        return $this->reviewItem;
+    }
+
+    /**
+     * Returns the RFC 4122 UUID string of the attached review item for API serialization.
+     */
+    #[Groups(['photo:read', 'poi:read'])]
+    #[SerializedName('reviewItemId')]
+    public function getReviewItemId(): ?string
+    {
+        return $this->reviewItem?->getId()->toRfc4122();
     }
 
     /**

@@ -24,6 +24,12 @@ final class PhotoUploadInputDto
     public ?string $reviewId = null;
 
     /**
+     * Optional UUID of an existing ReviewItem on the same POI/review to link this dish photo to.
+     */
+    #[Assert\Uuid(message: 'Invalid reviewItemId UUID.')]
+    public ?string $reviewItemId = null;
+
+    /**
      * Public visibility flag (defaults to false for privacy).
      */
     public bool $isPublic = false;

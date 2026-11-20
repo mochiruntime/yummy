@@ -10,10 +10,12 @@ use App\Entity\ActivityEvent;
 use App\Entity\Photo;
 use App\Entity\Reaction;
 use App\Entity\Review;
+use App\Entity\ReviewItem;
 use App\Entity\User;
 use App\Repository\PhotoRepository;
 use App\Repository\PoiRepository;
 use App\Repository\ReactionRepository;
+use App\Repository\ReviewItemRepository;
 use App\Repository\ReviewRepository;
 use App\Security\Voter\ResourceOwnerVoter;
 use App\Service\ActivityFeedService;
@@ -48,7 +50,7 @@ final class PhotoController extends AbstractController
      * @param ImageProcessingService   $imageProcessor EXIF-stripping and thumbnailing service
      * @param ActivityFeedService      $feedService    Activity feed service
      * @param EntityManagerInterface   $em             Doctrine entity manager
-     * @param PhotoUploadInputDto|null $dto            Validated multipart metadata (caption, reviewId, isPublic)
+     * @param PhotoUploadInputDto|null $dto            Validated multipart metadata (caption, reviewId, reviewItemId, isPublic)
      * @param UploadedFile|null        $file           Uploaded image file
      */
     #[Route('/api/pois/{id}/photos', name: 'api_pois_upload_photo', requirements: ['id' => Requirement::UUID], methods: ['POST'])]
@@ -58,6 +60,7 @@ final class PhotoController extends AbstractController
         #[CurrentUser] User $user,
         PoiRepository $pois,
         ReviewRepository $reviews,
+        ReviewItemRepository $reviewItems,
         ImageProcessingService $imageProcessor,
         ActivityFeedService $feedService,
         EntityManagerInterface $em,
@@ -85,6 +88,24 @@ final class PhotoController extends AbstractController
             $this->denyAccessUnlessGranted(ResourceOwnerVoter::OWN, $review);
         }
 
+        // Validate optional reviewItemId belongs to the target POI and (if provided) target review
+        $reviewItem = null;
+        if ($dto->reviewItemId !== null && $dto->reviewItemId !== '') {
+            $reviewItem = $reviewItems->find(Uuid::fromString($dto->reviewItemId));
+            if (!$reviewItem instanceof ReviewItem || $reviewItem->getReview()->getPoi()->getId()->toRfc4122() !== $poi->getId()->toRfc4122()) {
+                return $this->json(['error' => 'Target review item not found on this POI.'], Response::HTTP_NOT_FOUND);
+            }
+
+            if ($review !== null && $reviewItem->getReview()->getId()->toRfc4122() !== $review->getId()->toRfc4122()) {
+                return $this->json(['error' => 'Target review item does not belong to the specified review.'], Response::HTTP_BAD_REQUEST);
+            }
+
+            if ($review === null) {
+                $review = $reviewItem->getReview();
+                $this->denyAccessUnlessGranted(ResourceOwnerVoter::OWN, $review);
+            }
+        }
+
         $caption = trim((string) $dto->caption);
 
         try {
@@ -103,6 +124,7 @@ final class PhotoController extends AbstractController
             $review,
             $caption !== '' ? $caption : null,
             $dto->isPublic,
+            $reviewItem,
         );
 
         $em->persist($photo);

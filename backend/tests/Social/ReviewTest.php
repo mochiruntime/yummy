@@ -243,6 +243,67 @@ final class ReviewTest extends WebTestCase
         self::assertCount(2, $memberDetail['reviews']);
     }
 
+    public function testCreateReviewWithPriceVibesAndOrderedItems(): void
+    {
+        $author = new User('foodie@yummy.test', 'Foodie');
+        $this->em->persist($author);
+
+        $poi = new Poi($author, 'Boulangerie', 48.87, 2.36, null, null, true);
+        $this->em->persist($poi);
+        $this->em->flush();
+
+        $this->client->loginUser($author);
+        $csrf = $this->fetchCsrfToken();
+
+        $this->client->request(
+            'POST',
+            '/api/pois/'.$poi->getId()->toRfc4122().'/reviews',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrf],
+            json_encode([
+                'rating' => 5,
+                'body' => 'Everything warm from the oven.',
+                'isPublic' => true,
+                'priceLevel' => 2,
+                'currency' => 'chf',
+                'vibes' => ['first' => ' 🔥 Must-order ', 'second' => '💸 Worth it', 'dup' => '🔥 Must-order'],
+                'items' => [
+                    [
+                        'name' => 'Pistachio Escargot',
+                        'verdict' => 'must_get',
+                        'priceAmount' => '4.80',
+                        'note' => 'Flaky and rich',
+                    ],
+                    [
+                        'name' => 'Espresso',
+                        'verdict' => 'good',
+                        'priceAmount' => '3.20',
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR),
+        );
+        self::assertResponseStatusCodeSame(201);
+
+        $created = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame($author->getId()->toRfc4122(), $created['authorId']);
+        self::assertSame(2, $created['priceLevel']);
+        self::assertSame('CHF', $created['currency']);
+        self::assertSame(['🔥 Must-order', '💸 Worth it'], $created['vibes']);
+        self::assertCount(2, $created['items']);
+        self::assertSame('Pistachio Escargot', $created['items'][0]['name']);
+        self::assertSame('must_get', $created['items'][0]['verdict']);
+        self::assertSame('4.80', $created['items'][0]['priceAmount']);
+
+        // Verify PoiDetailAssembler returns batch-loaded items and metadata
+        $this->client->request('GET', '/api/pois/'.$poi->getId()->toRfc4122());
+        self::assertResponseIsSuccessful();
+        $detail = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertCount(1, $detail['reviews']);
+        self::assertCount(2, $detail['reviews'][0]['items']);
+        self::assertSame('Espresso', $detail['reviews'][0]['items'][1]['name']);
+    }
+
     private function fetchCsrfToken(): string
     {
         $this->client->request('GET', '/api/auth/csrf');

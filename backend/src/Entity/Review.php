@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Repository\ReviewRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Attribute\Groups;
@@ -71,6 +73,40 @@ class Review
     private bool $isPublic = false;
 
     /**
+     * Optional spend tier from 1 ($) to 4 ($$$$), stored as SMALLINT, nullable.
+     */
+    #[ORM\Column(name: 'price_level', type: Types::SMALLINT, nullable: true)]
+    #[Groups(['review:read', 'poi:read'])]
+    #[SerializedName('priceLevel')]
+    private ?int $priceLevel = null;
+
+    /**
+     * Optional ISO 4217 currency code (e.g. "CHF", "EUR", "USD"), stored as VARCHAR(3), nullable.
+     */
+    #[ORM\Column(length: 3, nullable: true)]
+    #[Groups(['review:read', 'poi:read'])]
+    private ?string $currency = null;
+
+    /**
+     * Quick-tap vibe tags selected by the reviewer (e.g. ["Must-order", "Cozy vibe"]), stored as JSON array.
+     *
+     * @var list<string>
+     */
+    #[ORM\Column(type: Types::JSON)]
+    #[Groups(['review:read', 'poi:read'])]
+    private array $vibes = [];
+
+    /**
+     * Individual dishes, drinks, or order items reviewed within this review.
+     *
+     * @var Collection<int, ReviewItem>
+     */
+    #[ORM\OneToMany(targetEntity: ReviewItem::class, mappedBy: 'review', cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[ORM\OrderBy(['sortOrder' => 'ASC', 'id' => 'ASC'])]
+    #[Groups(['review:read'])]
+    private Collection $items;
+
+    /**
      * Timestamp when the review was originally posted.
      */
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
@@ -87,11 +123,14 @@ class Review
     /**
      * Creates a new Review entity.
      *
-     * @param Poi         $poi      Target POI
-     * @param User        $author   Authenticated author
-     * @param int         $rating   Numeric rating between 1 and 5
-     * @param string|null $body     Optional written review text
-     * @param bool        $isPublic Whether the review is publicly visible when the parent POI is public
+     * @param Poi          $poi        Target POI
+     * @param User         $author     Authenticated author
+     * @param int          $rating     Numeric rating between 1 and 5
+     * @param string|null  $body       Optional written review text
+     * @param bool         $isPublic   Whether the review is publicly visible when the parent POI is public
+     * @param int|null     $priceLevel Optional spend tier (1-4)
+     * @param string|null  $currency   Optional ISO 4217 currency code
+     * @param list<string> $vibes      Optional vibe tags
      */
     public function __construct(
         Poi $poi,
@@ -99,6 +138,9 @@ class Review
         int $rating,
         ?string $body = null,
         bool $isPublic = false,
+        ?int $priceLevel = null,
+        ?string $currency = null,
+        array $vibes = [],
     ) {
         $this->id = Uuid::v7();
         $this->poi = $poi;
@@ -106,6 +148,13 @@ class Review
         $this->rating = $rating;
         $this->body = $body !== null && trim($body) !== '' ? trim($body) : null;
         $this->isPublic = $isPublic;
+        $this->priceLevel = $priceLevel;
+        $this->currency = $currency !== null && trim($currency) !== '' ? strtoupper(trim($currency)) : null;
+        $this->vibes = array_values(array_unique(array_filter(
+            array_map(static fn (string $v): string => trim($v), $vibes),
+            static fn (string $v): bool => $v !== '',
+        )));
+        $this->items = new ArrayCollection();
         $this->createdAt = new \DateTimeImmutable();
         $this->updatedAt = new \DateTimeImmutable();
     }
@@ -132,6 +181,16 @@ class Review
     public function getAuthor(): User
     {
         return $this->author;
+    }
+
+    /**
+     * Returns the author's RFC 4122 UUID string for API serialization.
+     */
+    #[Groups(['review:read', 'poi:read'])]
+    #[SerializedName('authorId')]
+    public function getAuthorId(): string
+    {
+        return $this->author->getId()->toRfc4122();
     }
 
     /**
@@ -191,6 +250,52 @@ class Review
     public function getUpdatedAt(): \DateTimeImmutable
     {
         return $this->updatedAt;
+    }
+
+    /**
+     * Returns the optional spend tier (1-4).
+     */
+    public function getPriceLevel(): ?int
+    {
+        return $this->priceLevel;
+    }
+
+    /**
+     * Returns the optional ISO 4217 currency code.
+     */
+    public function getCurrency(): ?string
+    {
+        return $this->currency;
+    }
+
+    /**
+     * Returns the reviewer's vibe tags.
+     *
+     * @return list<string>
+     */
+    public function getVibes(): array
+    {
+        return $this->vibes;
+    }
+
+    /**
+     * Returns the ordered dish/drink items attached to this review.
+     *
+     * @return Collection<int, ReviewItem>
+     */
+    public function getItems(): Collection
+    {
+        return $this->items;
+    }
+
+    /**
+     * Attaches a ReviewItem to this review.
+     */
+    public function addItem(ReviewItem $item): void
+    {
+        if (!$this->items->contains($item)) {
+            $this->items->add($item);
+        }
     }
 
     /**

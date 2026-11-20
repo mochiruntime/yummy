@@ -9,6 +9,7 @@ use App\Entity\User;
 use App\Repository\CommentRepository;
 use App\Repository\PhotoRepository;
 use App\Repository\ReactionRepository;
+use App\Repository\ReviewItemRepository;
 use App\Repository\ReviewRepository;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -24,6 +25,7 @@ final class PoiDetailAssembler
     public function __construct(
         private readonly NormalizerInterface $normalizer,
         private readonly ReviewRepository $reviews,
+        private readonly ReviewItemRepository $reviewItems,
         private readonly CommentRepository $comments,
         private readonly PhotoRepository $photos,
         private readonly ReactionRepository $reactions,
@@ -45,15 +47,22 @@ final class PoiDetailAssembler
         /** @var array<string, mixed> $base */
         $base = $this->normalizer->normalize($poi, 'json', ['groups' => ['poi:read']]);
 
+        $visibleReviews = $this->reviews->findVisibleForPoi($poi, $isGuest);
         /** @var list<array<string, mixed>> $normalizedReviews */
         $normalizedReviews = $this->normalizer->normalize(
-            $this->reviews->findVisibleForPoi($poi, $isGuest),
+            $visibleReviews,
             'json',
-            ['groups' => ['review:read']],
+            ['groups' => ['review:read'], 'ignored_attributes' => ['items']],
         );
+        $groupedItems = $this->reviewItems->findGroupedByReviews($visibleReviews);
         $reviewReactions = $this->reactions->getAggregatedForReviews($poi, $viewer);
         foreach ($normalizedReviews as &$reviewItem) {
             $reviewId = is_string($reviewItem['id'] ?? null) ? $reviewItem['id'] : '';
+            $reviewItem['items'] = $this->normalizer->normalize(
+                $groupedItems[$reviewId] ?? [],
+                'json',
+                ['groups' => ['review:read']],
+            );
             $reviewItem['reactions'] = $reviewReactions[$reviewId] ?? [];
         }
         unset($reviewItem);

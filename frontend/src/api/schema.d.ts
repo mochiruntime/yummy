@@ -684,19 +684,46 @@ export interface components {
             count: number;
             reactedByMe: boolean;
         };
+        ReviewItemInput: {
+            name: string;
+            /** @enum {string} */
+            verdict: "must_get" | "good" | "skip";
+            priceAmount?: string | null;
+            note?: string | null;
+        };
+        ReviewItem: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            verdict: "must_get" | "good" | "skip";
+            priceAmount?: string | null;
+            note?: string | null;
+            sortOrder: number;
+        };
         ReviewInput: {
             rating: number;
-            body?: string;
+            body?: string | null;
             /** @default false */
             isPublic: boolean;
+            priceLevel?: number | null;
+            currency?: string | null;
+            vibes?: string[];
+            items?: components["schemas"]["ReviewItemInput"][];
         };
         Review: {
             /** Format: uuid */
             id: string;
+            /** Format: uuid */
+            authorId: string;
             authorName: string;
             rating: number;
             body?: string | null;
             isPublic: boolean;
+            priceLevel?: number | null;
+            currency?: string | null;
+            vibes?: string[];
+            items?: components["schemas"]["ReviewItem"][];
             /** Format: date-time */
             createdAt: string;
             reactions?: components["schemas"]["ReactionSummary"][];
@@ -716,6 +743,8 @@ export interface components {
             id: string;
             /** Format: uuid */
             reviewId?: string | null;
+            /** Format: uuid */
+            reviewItemId?: string | null;
             url: string;
             thumbUrl: string;
             caption?: string | null;
@@ -1548,6 +1577,8 @@ export interface operations {
                     caption?: string;
                     /** Format: uuid */
                     reviewId?: string;
+                    /** Format: uuid */
+                    reviewItemId?: string;
                     /** @default false */
                     isPublic?: boolean;
                 };

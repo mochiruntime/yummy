@@ -9,6 +9,7 @@ use App\Dto\Social\ReviewInputDto;
 use App\Entity\ActivityEvent;
 use App\Entity\Reaction;
 use App\Entity\Review;
+use App\Entity\ReviewItem;
 use App\Entity\User;
 use App\Repository\PoiRepository;
 use App\Repository\ReactionRepository;
@@ -56,8 +57,30 @@ final class ReviewController extends AbstractController
             return $this->json(['error' => 'POI not found.'], Response::HTTP_NOT_FOUND);
         }
 
-        $review = new Review($poi, $user, $dto->rating, $dto->body, $dto->isPublic);
+        $review = new Review(
+            $poi,
+            $user,
+            $dto->rating,
+            $dto->body,
+            $dto->isPublic,
+            $dto->priceLevel,
+            $dto->currency,
+            $dto->vibes,
+        );
         $em->persist($review);
+
+        foreach ($dto->items as $sortOrder => $itemDto) {
+            $item = new ReviewItem(
+                $review,
+                $itemDto->name,
+                $itemDto->verdict,
+                $itemDto->priceAmount,
+                $itemDto->note,
+                $sortOrder,
+            );
+            $review->addItem($item);
+            $em->persist($item);
+        }
         $feedService->recordEvent(
             $user,
             ActivityEvent::EVENT_REVIEW_ADDED,

@@ -7,6 +7,7 @@ namespace App\Tests\Social;
 use App\Entity\Photo;
 use App\Entity\Poi;
 use App\Entity\Review;
+use App\Entity\ReviewItem;
 use App\Entity\User;
 use App\Service\ImageProcessingService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -354,6 +355,70 @@ final class PhotoTest extends WebTestCase
 
         self::assertFileDoesNotExist($fullPath);
         self::assertFileDoesNotExist($thumbPath);
+    }
+
+    public function testUploadPhotoLinkedToReviewItemAndCrossReviewRejection(): void
+    {
+        $author = new User('author@yummy.test', 'Author');
+        $other = new User('other@yummy.test', 'Other');
+        $this->em->persist($author);
+        $this->em->persist($other);
+
+        $poi = new Poi($author, 'Ramen Shop', 48.85, 2.35, null, null, true);
+        $this->em->persist($poi);
+
+        $review1 = new Review($poi, $author, 5, 'Great!', true);
+        $review2 = new Review($poi, $other, 4, 'Nice!', true);
+        $item1 = new ReviewItem($review1, 'Spicy Miso Ramen', ReviewItem::VERDICT_MUST_GET, '18.50');
+        $review1->addItem($item1);
+
+        $this->em->persist($review1);
+        $this->em->persist($review2);
+        $this->em->persist($item1);
+        $this->em->flush();
+
+        $poiId = $poi->getId()->toRfc4122();
+        $item1Id = $item1->getId()->toRfc4122();
+        $review2Id = $review2->getId()->toRfc4122();
+
+        // Other member cannot attach a photo to author's reviewItem
+        $this->client->loginUser($other);
+        $csrfOther = $this->fetchCsrfToken();
+        $jpg1 = $this->createSyntheticJpegWithExif(120, 120);
+        $this->client->request(
+            'POST',
+            '/api/pois/'.$poiId.'/photos',
+            ['reviewItemId' => $item1Id],
+            ['file' => new UploadedFile($jpg1, 'dish.jpg', 'image/jpeg', null, true)],
+            ['HTTP_X_XSRF_TOKEN' => $csrfOther],
+        );
+        self::assertResponseStatusCodeSame(403);
+
+        // Mismatched reviewId + reviewItemId returns 400
+        $this->client->request(
+            'POST',
+            '/api/pois/'.$poiId.'/photos',
+            ['reviewId' => $review2Id, 'reviewItemId' => $item1Id],
+            ['file' => new UploadedFile($jpg1, 'dish.jpg', 'image/jpeg', null, true)],
+            ['HTTP_X_XSRF_TOKEN' => $csrfOther],
+        );
+        self::assertResponseStatusCodeSame(400);
+
+        // Author uploads photo linked to reviewItemId (auto-links reviewId)
+        $this->client->loginUser($author);
+        $csrfAuthor = $this->fetchCsrfToken();
+        $jpg2 = $this->createSyntheticJpegWithExif(120, 120);
+        $this->client->request(
+            'POST',
+            '/api/pois/'.$poiId.'/photos',
+            ['reviewItemId' => $item1Id, 'isPublic' => '1'],
+            ['file' => new UploadedFile($jpg2, 'dish.jpg', 'image/jpeg', null, true)],
+            ['HTTP_X_XSRF_TOKEN' => $csrfAuthor],
+        );
+        self::assertResponseStatusCodeSame(201);
+        $uploaded = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame($item1Id, $uploaded['reviewItemId']);
+        self::assertSame($review1->getId()->toRfc4122(), $uploaded['reviewId']);
     }
 
     /**
