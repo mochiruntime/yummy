@@ -24,7 +24,7 @@ flowchart LR
 1. **Static Frontend + PHP Backend:** In production, Vite compiles the React PWA into static assets (`dist/`) served by Apache/Nginx alongside Symfony's `public/index.php`.
 2. **Zero-Leakage Third-Party Isolation:**
    - Default map tiles load from OpenFreeMap (or self-hosted Protomaps `.pmtiles` served via HTTP Range requests from the same origin).
-   - Geocoding queries go through Symfony (`GET /api/geocode`) so client IPs are never exposed to Photon/Nominatim, with responses cached in MariaDB.
+   - Geocoding queries (forward autocomplete `GET /api/geocode` and explicit user-triggered reverse lookup) go through Symfony so client IPs are never exposed to Photon/Nominatim, with responses cached in MariaDB.
    - Google Maps JS SDK is dynamically imported *only* when `GET /api/config` reports `googleMapsEnabled: true` **and** the user has accepted the privacy consent modal.
 3. **LAMP-Compatible Async Tasks:** Symfony Messenger handles email dispatch and image thumbnailing; in LAMP production without a daemonized worker, emails/images can run synchronously or via a periodic `cron` job (`bin/console messenger:consume async --time-limit=50`).
 
@@ -59,7 +59,7 @@ erDiagram
 | `invite_tokens` | `id`, `token_hash` (SHA-256, unique), `created_by_id`, `claimed_by_id` (nullable), `expires_at`, `claimed_at`, `revoked_at` | Single-use; raw token shown once to creator. |
 | `magic_link_tokens` | `id`, `user_id`, `token_hash` (SHA-256, unique), `expires_at` (15m), `used_at` | Single-use; invalidated on verification. |
 | `lists` | `id`, `name`, `color`, `icon`, `owner_id`, `created_at` | Owned collections/tags; only `owner_id` (or Admin) can modify list memberships. |
-| `pois` | `id`, `name`, `description`, `address`, `location` (`POINT SRID 4326`, spatial index), `latitude`, `longitude`, `is_public` (bool, default `false`), `version` (int, optimistic lock), `created_by_id`, `created_at`, `updated_at` | Spatial index enables fast `MBRContains` bounding-box queries. |
+| `pois` | `id`, `name`, `description`, `address`, `city`, `country`, `location` (`POINT SRID 4326`, spatial index), `latitude`, `longitude`, `is_public` (bool, default `false`), `version` (int, optimistic lock), `created_by_id`, `created_at`, `updated_at` | Spatial index enables fast `MBRContains` bounding-box queries; optional `city`/`country` support list location filtering. |
 | `poi_lists` | `poi_id`, `list_id` | Composite PK join table. |
 | `poi_revisions` | `id`, `poi_id`, `revision_number`, `editor_id`, `changed_fields` (JSON diff + snapshot), `created_at` | Immutable audit log for wiki-style edits & reverts. |
 | `reviews` | `id`, `poi_id`, `author_id`, `rating` (1–5), `body`, `is_public` (default `false`), `created_at`, `updated_at` | One or more reviews per user/POI (configurable; default 1 per user per POI). |

@@ -129,12 +129,15 @@ final class GeocodingService
                 }
 
                 $name = (string) ($props['name'] ?? $props['street'] ?? $query);
-                $addressParts = array_filter([
+                $city = $props['city'] ?? $props['town'] ?? $props['village'] ?? null;
+                $state = $props['state'] ?? null;
+                $addressParts = array_values(array_unique(array_filter([
                     $props['street'] ?? null,
                     $props['housenumber'] ?? null,
-                    $props['city'] ?? $props['town'] ?? $props['village'] ?? null,
+                    $city,
+                    $state !== $city ? $state : null,
                     $props['country'] ?? null,
-                ]);
+                ])));
 
                 $output[] = [
                     'label' => $name,

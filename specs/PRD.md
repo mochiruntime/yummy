@@ -41,14 +41,15 @@
 - **FR-MAP-01:** Default map renderer is **MapLibre GL JS** using privacy-friendly vector tiles (**OpenFreeMap** by default, or self-hosted **Protomaps `.pmtiles`** via configuration).
 - **FR-MAP-02:** Users can switch their render target to **Google Maps** *only if* enabled by the instance owner (`GOOGLE_MAPS_ENABLED=true`).
 - **FR-MAP-03:** Switching to Google Maps displays an explicit privacy warning modal explaining that Google scripts will be loaded and IP/viewport data shared. **Zero** Google requests occur before explicit consent.
-- **FR-MAP-04:** Place autocomplete uses a server-proxied, MariaDB-cached **Photon / Nominatim** endpoint (`GET /api/geocode`) by default, with manual map pin-drop always available as a zero-dependency fallback, and Google Places Autocomplete available only after Google Maps opt-in.
+- **FR-MAP-04:** Place autocomplete uses a server-proxied, MariaDB-cached **Photon / Nominatim** endpoint (`GET /api/geocode`) by default, with manual map pin-drop always available as a zero-dependency fallback (plus an optional, user-initiated reverse-geocode lookup to populate address/city/country), and Google Places Autocomplete available only after Google Maps opt-in.
 
 ### 3.3 POIs, Multi-List Categorization & Versioning
-- **FR-POI-01:** Authenticated members can create POIs via search autocomplete or manual map pin-drop, providing `name`, `latitude`, `longitude`, optional `address`, `description`, and initial `lists`.
+- **FR-POI-01:** Authenticated members can create POIs via search autocomplete or manual map pin-drop, providing `name`, `latitude`, `longitude`, optional `address`, `city`, `country`, `description`, and initial `lists`.
 - **FR-POI-02:** A POI can belong to **multiple lists** simultaneously (e.g., `"Restaurant"` AND `"Trip to Portugal 2026"`). Lists have owners; only a list's owner (or an Admin) can add/remove POIs from that list.
-- **FR-POI-03:** Members can create, rename, color-code, and filter the map by lists.
+- **FR-POI-03:** Members can create, rename, color-code, and browse/search/filter lists inside the sidebar or bottom sheet (including `"Mine"`, current map area, and `city`/`country` filters), while the map displays only a compact active-filter summary chip.
 - **FR-POI-04:** Any authenticated member can edit an existing POI's core fields (`name`, `description`, `address`, `coordinates`). Editing a POI cannot remove it from another user's list.
 - **FR-POI-05:** Every POI edit creates an immutable **POI Revision** (`version`, `editor`, `changed_fields`, `created_at`) using optimistic locking to prevent silent overwrites. Creators and Admins can view revision history and revert to a prior revision.
+- **FR-POI-06 (Shareable List View):** Every list has a shareable URL (`/lists/:id`) that opens the list's details and filters the map to only that list's pins (auto-fitted to bounds), strictly enforcing POI-level `is_public` visibility for Guests.
 
 ### 3.4 Reviews, Comments, Reactions & Photos
 - **FR-SOC-01:** Members (including the POI creator) can add a personal **Review** (numeric/star rating + text + optional attached photos) to a POI. Photos attached to a review are also included in the POI's unified gallery (ordered by direct POI photos first, then review photos), with optional origin labels and strict respect for visibility settings.

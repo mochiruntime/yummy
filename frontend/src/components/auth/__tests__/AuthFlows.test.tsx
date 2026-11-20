@@ -6,6 +6,11 @@ import { memoryLocation } from "wouter/memory-location";
 import { AppRoutes } from "../../../App";
 import { AuthProvider } from "../../../context/AuthContext";
 
+// Isolate auth flow tests from WebGL/JSDOM canvas limitations
+vi.mock("../../map/MapLibreCanvas", () => ({
+  MapLibreCanvas: () => <div data-testid="maplibre-canvas" />,
+}));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,

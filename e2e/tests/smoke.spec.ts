@@ -9,6 +9,6 @@ test("homepage renders without third-party Google requests", async ({ page }) =>
   });
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "yummy" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "yummy" })).toBeVisible();
   expect(googleRequests).toEqual([]);
 });

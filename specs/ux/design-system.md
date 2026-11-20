@@ -10,11 +10,11 @@
 `yummy` uses a **full-bleed map-centric canvas** inspired by modern mapping apps:
 
 - **Mobile (`< 768px`):**
-  - Full-viewport interactive map (`100dvh`) with floating top search & multi-list filter pills.
-  - **Bottom Sheet** (snap points: collapsed peek, half-height list/feed, full-height POI detail) for browsing the Activity Feed, List filters, or selected POI details.
+  - Full-viewport interactive map (`100dvh`) with a floating top search bar and a compact active-filter pill (when list filters are active) so the map stays unobstructed.
+  - **Bottom Sheet** (snap points: collapsed peek, half-height list/feed, full-height POI detail) with navigation tabs (**Spots** | **Lists** | **Feed**) for browsing POIs, searching/filtering lists (by name, `"Mine"`, or location), viewing shareable list views (`/lists/:id`), or inspecting selected POI details.
   - Floating Action Button (`+ Drop Pin`) anchored cleanly above the bottom sheet.
 - **Desktop (`>= 768px`):**
-  - Full-viewport map with a persistent **left side drawer (`380px–420px`)** for Search, List Filters, Activity Feed, and POI Details.
+  - Full-viewport map with a persistent **left side drawer (`380px–420px`)** featuring navigation tabs (**Spots** | **Lists** | **Feed**) for Search, List Discovery & Filters, Activity Feed, and POI/List Details.
 
 ---
 

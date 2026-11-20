@@ -72,3 +72,12 @@
   - Enforce UUID path parameter syntax on `#[Route]` attributes using `requirements: ['id' => Requirement::UUID]` (returning HTTP `404` automatically on malformed IDs) instead of repeating `Uuid::isValid()` inside controller actions.
 - **Voter-Based Resource Ownership**:
   - Centralize all ownership checks in `ResourceOwnerVoter` rather than duplicating inline author/owner/admin conditionals across controllers: use `ResourceOwnerVoter::MANAGE` for moderation/management actions (owner/author or `ROLE_ADMIN`) and `ResourceOwnerVoter::OWN` for strict author-only actions (e.g. attaching photos to a review). Keep method `@param` docblocks synchronized when removing unused `$user` parameters.
+
+## 8. Frontend & E2E Conventions
+- **Responsive Accessibility & Single-Mounted Navigation**:
+  - Any button or link whose visible label is hidden on narrow viewports (e.g., `hidden sm:inline`) must include an explicit `aria-label` so mobile screen readers and Playwright `getByRole` queries always have an accessible name.
+  - Gate desktop sidebar vs. mobile bottom-sheet tablists/panels with `useIsDesktop()` so duplicate `role="tablist"` / `role="tab"` nodes are never mounted simultaneously.
+- **Logout Cache Hygiene (`NFR-PWA-02`)**:
+  - Keep user-scoped TanStack Query caches strictly in memory (never `localStorage`), and ensure `signOut()` calls `await queryClient.cancelQueries(...)` for user-scoped queries before resetting `me` to `null` and calling `removeQueries`.
+- **Playwright E2E Execution Against PHP Built-in Server**:
+  - Clear `cache.rate_limiter` (`php bin/console cache:pool:clear cache.rate_limiter`) before running auth E2E tests, and run Playwright sequentially (`npx playwright test --workers=1`) when targeting single-threaded `php -S 0.0.0.0:8000` (avoiding concurrent `vite build` CPU contention).

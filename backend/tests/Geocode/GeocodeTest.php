@@ -101,7 +101,18 @@ final class GeocodeTest extends WebTestCase
                         'street' => 'Boulevard Saint-Germain',
                         'housenumber' => '172',
                         'city' => 'Paris',
+                        'state' => 'Paris', // Identical to city -> should not duplicate
                         'country' => 'France',
+                    ],
+                ],
+                [
+                    'geometry' => [
+                        'coordinates' => [6.6323, 46.5197],
+                    ],
+                    'properties' => [
+                        'name' => 'Lausanne',
+                        'state' => 'Vaud', // Distinct from city -> included for disambiguation
+                        'country' => 'Switzerland',
                     ],
                 ],
             ],
@@ -120,11 +131,13 @@ final class GeocodeTest extends WebTestCase
         );
 
         $results = $service->search('cafe flore', 48.85, 2.35);
-        self::assertCount(1, $results);
+        self::assertCount(2, $results);
         self::assertSame('Cafe de Flore', $results[0]['label']);
         self::assertSame(48.8566, $results[0]['latitude']);
         self::assertSame(2.3522, $results[0]['longitude']);
-        self::assertStringContainsString('Boulevard Saint-Germain', (string) $results[0]['address']);
+        self::assertSame('Boulevard Saint-Germain, 172, Paris, France', $results[0]['address']);
+        self::assertSame('Lausanne', $results[1]['label']);
+        self::assertSame('Vaud, Switzerland', $results[1]['address']);
 
         // Case 2: Photon fails (500), falls back to Nominatim
         $nominatimJson = json_encode([
