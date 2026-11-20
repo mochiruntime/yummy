@@ -79,5 +79,10 @@
   - Gate desktop sidebar vs. mobile bottom-sheet tablists/panels with `useIsDesktop()` so duplicate `role="tablist"` / `role="tab"` nodes are never mounted simultaneously.
 - **Logout Cache Hygiene (`NFR-PWA-02`)**:
   - Keep user-scoped TanStack Query caches strictly in memory (never `localStorage`), and ensure `signOut()` calls `await queryClient.cancelQueries(...)` for user-scoped queries before resetting `me` to `null` and calling `removeQueries`.
-- **Playwright E2E Execution Against PHP Built-in Server**:
-  - Clear `cache.rate_limiter` (`php bin/console cache:pool:clear cache.rate_limiter`) before running auth E2E tests, and run Playwright sequentially (`npx playwright test --workers=1`) when targeting single-threaded `php -S 0.0.0.0:8000` (avoiding concurrent `vite build` CPU contention).
+- **TanStack Query Edit Modals & `409` Reloads**:
+  - Subscribe to the canonical `useQuery` key inside edit modals (with `initialData` from the parent) rather than relying solely on a parent snapshot prop, and key the inner form by `version` (`key={activeDetail.version}`) so refetching after a `409 Conflict` resets fields cleanly without `useEffect` `setState`.
+- **Vitest Test Isolation & CSRF Stubbing**:
+  - Keep one scenario per `it()` block (resetting mocks only in `beforeEach`/`afterEach` so `window.matchMedia` stubs persist), and seed `document.cookie = "XSRF-TOKEN=..."` + handle `GET /api/auth/csrf` in `fetch`-mocked mutation tests.
+- **Isolated Playwright E2E Execution**:
+  - Keep E2E isolated from dev data via `e2e/global-setup.ts` (`yummy_test_e2e` DB reset + seed) and dedicated `8001` / `5174` `webServer`s with `workers: 1` (never run `vite build` concurrently with Playwright).
+  - Clear `cache.rate_limiter` in `test.beforeAll` for rate-limited auth specs, and scope Playwright locators to their dialog/container role when background panels remain mounted.
