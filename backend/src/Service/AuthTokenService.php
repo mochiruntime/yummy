@@ -35,6 +35,7 @@ final class AuthTokenService
         private readonly InviteTokenRepository $invites,
         private readonly MagicLinkTokenRepository $magicLinks,
         private readonly MailerInterface $mailer,
+        private readonly EmailTemplateRenderer $emailRenderer,
         private readonly FrontendUrlGenerator $urlGenerator,
         private readonly string $appMailerSender,
     ) {
@@ -74,12 +75,14 @@ final class AuthTokenService
         $this->em->flush();
 
         $loginUrl = $this->urlGenerator->generateMagicLinkUrl($rawToken);
+        $rendered = $this->emailRenderer->renderMagicLink($user->getDisplayName(), $loginUrl);
 
         $message = (new Email())
             ->from($this->appMailerSender)
             ->to($user->getEmail())
-            ->subject('Your yummy sign-in link')
-            ->text("Hi {$user->getDisplayName()},\n\nSign in to yummy using this one-time link (valid for 15 minutes):\n\n{$loginUrl}\n");
+            ->subject($rendered['subject'])
+            ->text($rendered['text'])
+            ->html($rendered['html']);
 
         $this->mailer->send($message);
     }
@@ -113,18 +116,19 @@ final class AuthTokenService
     /**
      * Generates a single-use friend invite token.
      *
-     * @param User $admin          The Admin issuing the invite
-     * @param int  $expiresInHours Duration in hours before the invite expires (default 7 days)
+     * @param User        $admin          The Admin issuing the invite
+     * @param int         $expiresInHours Duration in hours before the invite expires (default 7 days)
+     * @param string|null $label          Optional admin note describing the invite recipient/purpose
      *
      * @return array{invite: InviteToken, rawToken: string, inviteUrl: string}
      */
-    public function createInvite(User $admin, int $expiresInHours = 168): array
+    public function createInvite(User $admin, int $expiresInHours = 168, ?string $label = null): array
     {
         // Generate 256-bit cryptographically secure pseudorandom token
         $rawToken = bin2hex(random_bytes(32));
         $expiresAt = new \DateTimeImmutable(sprintf('+%d hours', max(1, $expiresInHours)));
 
-        $invite = new InviteToken(hash('sha256', $rawToken), $admin, $expiresAt);
+        $invite = new InviteToken(hash('sha256', $rawToken), $admin, $expiresAt, $label);
         $this->em->persist($invite);
         $this->em->flush();
 

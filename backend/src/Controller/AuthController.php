@@ -97,12 +97,23 @@ final class AuthController extends AbstractController
         $all = $invites->findAllOrderedByCreatedAtDesc();
         $now = new \DateTimeImmutable();
 
-        $data = array_map(static fn ($inv) => [
-            'id' => $inv->getId()->toRfc4122(),
-            'createdAt' => $inv->getCreatedAt()->format(\DateTimeInterface::ATOM),
-            'expiresAt' => $inv->getExpiresAt()->format(\DateTimeInterface::ATOM),
-            'status' => $inv->getStatus($now)->value,
-        ], $all);
+        $data = array_map(static function ($inv) use ($now): array {
+            $claimedBy = $inv->getClaimedBy();
+
+            return [
+                'id' => $inv->getId()->toRfc4122(),
+                'label' => $inv->getLabel(),
+                'createdAt' => $inv->getCreatedAt()->format(\DateTimeInterface::ATOM),
+                'expiresAt' => $inv->getExpiresAt()->format(\DateTimeInterface::ATOM),
+                'claimedAt' => $inv->getClaimedAt()?->format(\DateTimeInterface::ATOM),
+                'claimedBy' => $claimedBy !== null ? [
+                    'id' => $claimedBy->getId()->toRfc4122(),
+                    'displayName' => $claimedBy->getDisplayName(),
+                    'email' => $claimedBy->getEmail(),
+                ] : null,
+                'status' => $inv->getStatus($now)->value,
+            ];
+        }, $all);
 
         return $this->json($data);
     }
@@ -117,10 +128,11 @@ final class AuthController extends AbstractController
         #[CurrentUser] User $admin,
         AuthTokenService $authService,
     ): JsonResponse {
-        $created = $authService->createInvite($admin, $dto->expiresInHours);
+        $created = $authService->createInvite($admin, $dto->expiresInHours, $dto->label);
 
         return $this->json([
             'id' => $created['invite']->getId()->toRfc4122(),
+            'label' => $created['invite']->getLabel(),
             'inviteUrl' => $created['inviteUrl'],
             'expiresAt' => $created['invite']->getExpiresAt()->format(\DateTimeInterface::ATOM),
         ], Response::HTTP_CREATED);

@@ -144,6 +144,10 @@ paths:
                 expiresInHours:
                   type: integer
                   default: 168
+                label:
+                  type: string
+                  nullable: true
+                  maxLength: 100
       responses:
         "201":
           description: Created one-time invite (raw token returned once)
@@ -156,6 +160,9 @@ paths:
                   id:
                     type: string
                     format: uuid
+                  label:
+                    type: string
+                    nullable: true
                   inviteUrl:
                     type: string
                     format: uri
@@ -917,12 +924,32 @@ components:
         id:
           type: string
           format: uuid
+        label:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
         expiresAt:
           type: string
           format: date-time
+        claimedAt:
+          type: string
+          format: date-time
+          nullable: true
+        claimedBy:
+          type: object
+          nullable: true
+          required: [id, displayName, email]
+          properties:
+            id:
+              type: string
+              format: uuid
+            displayName:
+              type: string
+            email:
+              type: string
+              format: email
         status:
           type: string
           enum: [pending, claimed, revoked, expired]

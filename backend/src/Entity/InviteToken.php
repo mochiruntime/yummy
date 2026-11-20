@@ -68,6 +68,15 @@ class InviteToken
     private ?\DateTimeImmutable $revokedAt = null;
 
     /**
+     * Optional admin-provided note describing who or what this invite is for.
+     *
+     * Stored as VARCHAR(100), nullable, defaults to null.
+     * Visible only to ROLE_ADMIN users in invite management endpoints; never exposed to guests or invitees.
+     */
+    #[ORM\Column(name: 'label', length: 100, nullable: true)]
+    private ?string $label = null;
+
+    /**
      * Timestamp when the invite token was created.
      */
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
@@ -77,13 +86,16 @@ class InviteToken
      * @param string             $tokenHash SHA-256 hash of the raw token
      * @param User               $createdBy Admin issuing the invite
      * @param \DateTimeImmutable $expiresAt Expiration datetime
+     * @param string|null        $label     Optional admin note for tracking the invite
      */
-    public function __construct(string $tokenHash, User $createdBy, \DateTimeImmutable $expiresAt)
+    public function __construct(string $tokenHash, User $createdBy, \DateTimeImmutable $expiresAt, ?string $label = null)
     {
         $this->id = Uuid::v7();
         $this->tokenHash = $tokenHash;
         $this->createdBy = $createdBy;
         $this->expiresAt = $expiresAt;
+        $trimmed = $label !== null ? trim($label) : '';
+        $this->label = $trimmed !== '' ? $trimmed : null;
         $this->createdAt = new \DateTimeImmutable();
     }
 
@@ -93,6 +105,14 @@ class InviteToken
     public function getId(): Uuid
     {
         return $this->id;
+    }
+
+    /**
+     * Returns the optional admin label for this invite.
+     */
+    public function getLabel(): ?string
+    {
+        return $this->label;
     }
 
     /**

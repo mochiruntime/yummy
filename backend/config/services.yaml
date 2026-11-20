@@ -31,10 +31,6 @@ services:
             - '../src/Entity/'
             - '../src/Kernel.php'
 
-    app.pdo_connection:
-        class: PDO
-        factory: ['@doctrine.dbal.default_connection', 'getNativeConnection']
-
     Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler:
         arguments:
-            - '@app.pdo_connection'
+            - '%env(DATABASE_URL)%'

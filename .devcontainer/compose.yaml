@@ -7,6 +7,9 @@ services:
       - ..:/workspaces/yummy:cached
       - backend_vendor:/workspaces/yummy/backend/vendor
     command: sleep infinity
+    ports:
+      - "8000:8000"
+      - "5173:5173"
     environment:
       APP_ENV: dev
       XDEBUG_MODE: "off"

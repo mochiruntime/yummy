@@ -94,6 +94,10 @@ final class AuthFlowTest extends WebTestCase
         $email = self::getMailerMessage();
         self::assertInstanceOf(Email::class, $email);
         $body = (string) $email->getTextBody();
+        $html = (string) $email->getHtmlBody();
+        self::assertStringContainsString('Sign in to yummy', $html);
+        self::assertStringContainsString('/magic-link/', $html);
+        self::assertStringNotContainsString('fonts.googleapis.com', $html);
         self::assertMatchesRegularExpression('#/magic-link/([a-f0-9]{64})#', $body);
         $matched = preg_match('#/magic-link/([a-f0-9]{64})#', $body, $matches);
         self::assertSame(1, $matched);
@@ -204,18 +208,19 @@ final class AuthFlowTest extends WebTestCase
         $this->client->loginUser($admin);
         $csrf = $this->fetchCsrfToken();
 
-        // Admin creates one-time invite
+        // Admin creates one-time invite with label
         $this->client->request(
             'POST',
             '/api/auth/invites',
             [],
             [],
             ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrf],
-            json_encode(['expiresInHours' => 48], JSON_THROW_ON_ERROR),
+            json_encode(['expiresInHours' => 48, 'label' => 'For Alice (Signal)'], JSON_THROW_ON_ERROR),
         );
         self::assertResponseStatusCodeSame(201);
         $inviteData = json_decode((string) $this->client->getResponse()->getContent(), true);
         self::assertIsArray($inviteData);
+        self::assertSame('For Alice (Signal)', $inviteData['label']);
         self::assertMatchesRegularExpression('#/join/([a-f0-9]{64})$#', (string) $inviteData['inviteUrl']);
         $matched = preg_match('#/join/([a-f0-9]{64})$#', (string) $inviteData['inviteUrl'], $matches);
         self::assertSame(1, $matched);
@@ -228,6 +233,20 @@ final class AuthFlowTest extends WebTestCase
         self::assertIsArray($invitesList);
         self::assertCount(1, $invitesList);
         self::assertSame('pending', $invitesList[0]['status']);
+        self::assertSame('For Alice (Signal)', $invitesList[0]['label']);
+        self::assertNull($invitesList[0]['claimedBy']);
+        self::assertNull($invitesList[0]['claimedAt']);
+
+        // Label exceeding 100 chars is rejected with 422
+        $this->client->request(
+            'POST',
+            '/api/auth/invites',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrf],
+            json_encode(['expiresInHours' => 48, 'label' => str_repeat('a', 101)], JSON_THROW_ON_ERROR),
+        );
+        self::assertResponseStatusCodeSame(422);
 
         // Logout admin
         $this->client->request('POST', '/api/auth/logout', [], [], ['HTTP_X_XSRF_TOKEN' => $csrf]);
@@ -248,6 +267,22 @@ final class AuthFlowTest extends WebTestCase
         self::assertIsArray($friend);
         self::assertSame('Alice', $friend['displayName']);
         self::assertNotContains('ROLE_ADMIN', $friend['roles']);
+
+        // Admin sees claimedBy and claimedAt populated on the invite
+        $this->client->loginUser($admin);
+        $this->client->request('GET', '/api/auth/invites');
+        self::assertResponseIsSuccessful();
+        $claimedList = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertIsArray($claimedList);
+        self::assertSame('claimed', $claimedList[0]['status']);
+        self::assertNotNull($claimedList[0]['claimedAt']);
+        self::assertSame('Alice', $claimedList[0]['claimedBy']['displayName']);
+        self::assertSame('alice@yummy.test', $claimedList[0]['claimedBy']['email']);
+
+        // Switch back to friend for remaining checks
+        $friendUser = $this->em->getRepository(User::class)->findOneBy(['email' => 'alice@yummy.test']);
+        self::assertNotNull($friendUser);
+        $this->client->loginUser($friendUser);
 
         // Friend cannot create invites (403)
         $this->client->request(

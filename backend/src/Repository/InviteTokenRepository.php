@@ -29,12 +29,19 @@ class InviteTokenRepository extends ServiceEntityRepository
     }
 
     /**
-     * Returns all invites ordered by creation date descending for Admin management views.
+     * Returns all invites ordered by creation date descending for Admin management views,
+     * eager-loading the claiming user to avoid N+1 queries.
      *
      * @return list<InviteToken>
      */
     public function findAllOrderedByCreatedAtDesc(): array
     {
-        return $this->findBy([], ['createdAt' => 'DESC']);
+        /** @var list<InviteToken> */
+        return $this->createQueryBuilder('i')
+            ->leftJoin('i.claimedBy', 'u')
+            ->addSelect('u')
+            ->orderBy('i.createdAt', 'DESC')
+            ->getQuery()
+            ->getResult();
     }
 }
