@@ -69,7 +69,7 @@ const LIST_1 = {
   id: "11111111-1111-7111-8111-111111111111",
   name: "Bakeries",
   color: "#E11D48",
-  icon: "croissant",
+  icon: "🥐",
   ownerId: "01950000-0000-7000-8000-000000000002",
   ownerName: "Alex",
 };
@@ -78,7 +78,7 @@ const LIST_2 = {
   id: "22222222-2222-7222-8222-222222222222",
   name: "Coffee",
   color: "#059669",
-  icon: "coffee",
+  icon: "☕",
   ownerId: "01950000-0000-7000-8000-000000000999",
   ownerName: "Sam",
 };
@@ -87,7 +87,7 @@ const LIST_3 = {
   id: "33333333-3333-7333-8333-333333333333",
   name: "Lisbon Trip",
   color: "#4F46E5",
-  icon: "map-pin",
+  icon: "📍",
   ownerId: "01950000-0000-7000-8000-000000000999",
   ownerName: "Sam",
 };
@@ -265,6 +265,7 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
 
   it("enforces list ownership in ListManagerModal and supports creating a new list", async () => {
     let lists = [LIST_1, LIST_2];
+    const postedIcons: string[] = [];
 
     renderListsWorkspace(async (url, init) => {
       if (url === "/api/config") {
@@ -283,6 +284,7 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
       }
       if (url === "/api/lists" && init?.method === "POST") {
         const body = JSON.parse(String(init.body)) as { name: string; color: string; icon: string };
+        postedIcons.push(body.icon);
         const created = {
           id: "44444444-4444-7444-8444-444444444444",
           name: body.name,
@@ -306,8 +308,10 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
     expect(screen.queryByRole("button", { name: /edit list coffee/i })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/list name/i), { target: { value: "Ramen" } });
+    fireEvent.click(screen.getByRole("button", { name: "Select emoji 🍜" }));
     fireEvent.click(screen.getByRole("button", { name: /create list/i }));
 
     expect((await screen.findAllByText("Ramen")).length).toBeGreaterThan(0);
+    expect(postedIcons).toEqual(["🍜"]);
   });
 });

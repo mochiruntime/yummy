@@ -25,8 +25,8 @@ final class PoiListInputDto
     public string $color = '#E11D48';
 
     /**
-     * Icon identifier name from the Lucide icon library (e.g. "bookmark", "utensils").
+     * Emoji icon for list badges (e.g. "📍", "🥐").
      */
     #[Assert\Length(max: 32)]
-    public string $icon = 'bookmark';
+    public string $icon = '📍';
 }

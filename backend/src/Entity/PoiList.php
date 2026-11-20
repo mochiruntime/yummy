@@ -54,7 +54,7 @@ class PoiList
     private string $color;
 
     /**
-     * Lucide/Feather icon identifier for list badges (e.g., "bookmark", "utensils"). Max 32 characters.
+     * Emoji icon for list badges (e.g., "📍", "🥐"). Stored as VARCHAR(32) utf8mb4, non-null, visible on all list summaries.
      */
     #[ORM\Column(length: 32)]
     #[Groups(['list:read', 'poi:read', 'poi:summary'])]

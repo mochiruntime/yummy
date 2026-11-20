@@ -7,7 +7,7 @@ import { poiKeys } from "../../api/pois";
 import type { PoiList, PoiListInput, User } from "../../api/types";
 import { sanitizeHexColor } from "../../utils/color";
 import { Modal } from "../ui/Modal";
-import { LIST_ICON_OPTIONS, ListIcon } from "./ListIcon";
+import { LIST_EMOJI_OPTIONS, ListIcon } from "./ListIcon";
 
 const COLOR_PRESETS = ["#E11D48", "#4F46E5", "#059669", "#D97706", "#0284C7", "#7C3AED"];
 
@@ -30,12 +30,13 @@ export function ListManagerModal({
 }: ListManagerModalProps) {
   const queryClient = useQueryClient();
   const nameId = useId();
+  const customEmojiId = useId();
   const [editingId, setEditingId] = useState<string | null>(initialEditList?.id ?? null);
   const [name, setName] = useState(initialEditList?.name ?? "");
   const [color, setColor] = useState(
     initialEditList ? sanitizeHexColor(initialEditList.color) : COLOR_PRESETS[0],
   );
-  const [icon, setIcon] = useState<string>(initialEditList?.icon ?? "bookmark");
+  const [icon, setIcon] = useState<string>(initialEditList?.icon ?? "📍");
 
   const invalidateAll = () => {
     void queryClient.invalidateQueries({ queryKey: listKeys.all });
@@ -46,7 +47,7 @@ export function ListManagerModal({
     setEditingId(null);
     setName("");
     setColor(COLOR_PRESETS[0]);
-    setIcon("bookmark");
+    setIcon("📍");
   };
 
   const saveMutation = useMutation({
@@ -144,24 +145,42 @@ export function ListManagerModal({
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-xs font-medium text-[var(--text-muted)]">Icon:</span>
-            {LIST_ICON_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                aria-label={opt.label}
-                aria-pressed={icon === opt.id}
-                onClick={() => setIcon(opt.id)}
-                className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border text-xs ${
-                  icon === opt.id
-                    ? "border-[var(--accent-brand)] bg-[var(--accent-brand)]/10 text-[var(--accent-brand)]"
-                    : "border-black/10 text-[var(--text-muted)] dark:border-white/10"
-                }`}
-              >
-                <ListIcon name={opt.id} className="h-4 w-4" />
-              </button>
-            ))}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-[var(--text-muted)]">Emoji:</span>
+              <div className="flex items-center gap-1.5">
+                <label htmlFor={customEmojiId} className="text-[11px] text-[var(--text-muted)]">
+                  Custom
+                </label>
+                <input
+                  id={customEmojiId}
+                  type="text"
+                  maxLength={8}
+                  value={icon}
+                  onChange={(e) => setIcon(e.target.value)}
+                  placeholder="🇵🇹"
+                  className="min-h-9 w-16 rounded-lg border border-black/15 bg-transparent px-2 text-center text-sm dark:border-white/15"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-6 gap-1.5">
+              {LIST_EMOJI_OPTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  aria-label={`Select emoji ${emoji}`}
+                  aria-pressed={icon === emoji}
+                  onClick={() => setIcon(emoji)}
+                  className={`inline-flex min-h-11 items-center justify-center rounded-lg border text-base transition-colors ${
+                    icon === emoji
+                      ? "border-[var(--accent-brand)] bg-[var(--accent-brand)]/10"
+                      : "border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+                  }`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
           </div>
 
           {mutationError && (
