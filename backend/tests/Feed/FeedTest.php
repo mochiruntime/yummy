@@ -357,7 +357,7 @@ final class FeedTest extends WebTestCase
         $this->client->loginUser($user);
         $csrf = $this->fetchCsrfToken();
 
-        // Create review, comment, and reaction
+        // Create review, photo, comment, and reactions on POI, review, and photo
         $this->client->request(
             'POST',
             '/api/pois/' . $poiId . '/reviews',
@@ -368,6 +368,22 @@ final class FeedTest extends WebTestCase
         );
         $reviewId = $this->decodeJson()['id'];
         self::assertIsString($reviewId);
+
+        $tmpPng = $this->createTempPng();
+        try {
+            $this->client->request(
+                'POST',
+                '/api/pois/' . $poiId . '/photos',
+                ['isPublic' => '1'],
+                ['file' => new UploadedFile($tmpPng, 'cafe.png', 'image/png', null, true)],
+                ['HTTP_X_XSRF_TOKEN' => $csrf],
+            );
+            self::assertResponseStatusCodeSame(201);
+            $photoId = $this->decodeJson()['id'];
+            self::assertIsString($photoId);
+        } finally {
+            @unlink($tmpPng);
+        }
 
         $this->client->request(
             'POST',
@@ -390,10 +406,33 @@ final class FeedTest extends WebTestCase
         );
         self::assertResponseStatusCodeSame(200);
 
-        self::assertCount(3, $this->events->findAll());
+        $this->client->request(
+            'POST',
+            '/api/reviews/' . $reviewId . '/reactions',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrf],
+            json_encode(['emoji' => '👍', 'isPublic' => true], JSON_THROW_ON_ERROR),
+        );
+        self::assertResponseStatusCodeSame(200);
 
-        // Delete review, comment, and toggle off reaction
+        $this->client->request(
+            'POST',
+            '/api/photos/' . $photoId . '/reactions',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrf],
+            json_encode(['emoji' => '📸', 'isPublic' => true], JSON_THROW_ON_ERROR),
+        );
+        self::assertResponseStatusCodeSame(200);
+
+        self::assertCount(6, $this->events->findAll());
+
+        // Delete review (and its cascaded reaction), photo (and its cascaded reaction), comment, and toggle off POI reaction
         $this->client->request('DELETE', '/api/reviews/' . $reviewId, [], [], ['HTTP_X_XSRF_TOKEN' => $csrf]);
+        self::assertResponseStatusCodeSame(204);
+
+        $this->client->request('DELETE', '/api/photos/' . $photoId, [], [], ['HTTP_X_XSRF_TOKEN' => $csrf]);
         self::assertResponseStatusCodeSame(204);
 
         $this->client->request('DELETE', '/api/comments/' . $commentId, [], [], ['HTTP_X_XSRF_TOKEN' => $csrf]);
@@ -410,6 +449,15 @@ final class FeedTest extends WebTestCase
         self::assertResponseStatusCodeSame(200);
 
         self::assertCount(0, $this->events->findAll());
+
+        $this->client->request('GET', '/api/feed');
+        self::assertResponseStatusCodeSame(200);
+        self::assertSame([], $this->decodeJson()['items']);
+
+        $this->client->getCookieJar()->clear();
+        $this->client->request('GET', '/api/feed');
+        self::assertResponseStatusCodeSame(200);
+        self::assertSame([], $this->decodeJson()['items']);
     }
 
     public function testCursorPaginationAndValidationErrors(): void
@@ -484,12 +532,12 @@ final class FeedTest extends WebTestCase
     private function fetchCsrfToken(): string
     {
         $this->client->request('GET', '/api/auth/csrf');
-        $data = $this->decodeJson();
-        $token = $data['csrfToken'];
-        self::assertIsString($token);
-        $this->client->getCookieJar()->set(new Cookie('XSRF-TOKEN', $token));
+        self::assertResponseStatusCodeSame(204);
 
-        return $token;
+        $cookie = $this->client->getCookieJar()->get('XSRF-TOKEN');
+        self::assertInstanceOf(Cookie::class, $cookie);
+
+        return $cookie->getValue();
     }
 
     private function createTempPng(): string

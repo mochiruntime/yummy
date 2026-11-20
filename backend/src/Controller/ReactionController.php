@@ -195,11 +195,13 @@ final class ReactionController extends AbstractController
             $reacted = true;
         }
 
-        $em->flush();
+        $em->wrapInTransaction(static function () use ($em, $feedService, $removedReactionId): void {
+            $em->flush();
 
-        if ($removedReactionId !== null) {
-            $feedService->deleteForTarget(ActivityEvent::TARGET_REACTION, $removedReactionId);
-        }
+            if ($removedReactionId !== null) {
+                $feedService->deleteForTarget(ActivityEvent::TARGET_REACTION, $removedReactionId);
+            }
+        });
 
         return $this->json([
             'reacted' => $reacted,

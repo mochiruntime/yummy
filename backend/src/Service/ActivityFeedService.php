@@ -67,6 +67,17 @@ final class ActivityFeedService
     }
 
     /**
+     * Removes all feed events referencing any of the given deleted target entity UUIDs.
+     *
+     * @param string     $targetType Target discriminator (ActivityEvent::TARGET_*)
+     * @param list<Uuid> $targetIds  Target entity UUIDs
+     */
+    public function deleteForTargets(string $targetType, array $targetIds): void
+    {
+        $this->events->deleteByTargets($targetType, $targetIds);
+    }
+
+    /**
      * Builds a cursor-paginated activity feed page formatted to the OpenAPI ActivityEvent schema.
      *
      * @param User|null                                       $viewer Authenticated user, or null for guests

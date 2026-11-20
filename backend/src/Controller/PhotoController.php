@@ -8,10 +8,12 @@ use App\Dto\Poi\VisibilityInputDto;
 use App\Dto\Social\PhotoUploadInputDto;
 use App\Entity\ActivityEvent;
 use App\Entity\Photo;
+use App\Entity\Reaction;
 use App\Entity\Review;
 use App\Entity\User;
 use App\Repository\PhotoRepository;
 use App\Repository\PoiRepository;
+use App\Repository\ReactionRepository;
 use App\Repository\ReviewRepository;
 use App\Security\Voter\ResourceOwnerVoter;
 use App\Service\ActivityFeedService;
@@ -143,10 +145,12 @@ final class PhotoController extends AbstractController
 
         $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $photo);
 
-        $photo->setIsPublic($dto->isPublic);
-        $em->flush();
+        $em->wrapInTransaction(static function () use ($photo, $dto, $feedService, $em): void {
+            $photo->setIsPublic($dto->isPublic);
+            $em->flush();
 
-        $feedService->syncVisibility(ActivityEvent::TARGET_PHOTO, $photo->getId(), $dto->isPublic);
+            $feedService->syncVisibility(ActivityEvent::TARGET_PHOTO, $photo->getId(), $dto->isPublic);
+        });
 
         return $this->json($photo, context: ['groups' => ['photo:read']]);
     }
@@ -156,6 +160,7 @@ final class PhotoController extends AbstractController
      *
      * @param string                 $id             UUID string of the target photo
      * @param PhotoRepository        $photos         Photo repository
+     * @param ReactionRepository     $reactions      Reaction repository
      * @param ImageProcessingService $imageProcessor Service to clean up stored files
      * @param ActivityFeedService    $feedService    Activity feed service
      * @param EntityManagerInterface $em             Doctrine entity manager
@@ -165,6 +170,7 @@ final class PhotoController extends AbstractController
     public function delete(
         string $id,
         PhotoRepository $photos,
+        ReactionRepository $reactions,
         ImageProcessingService $imageProcessor,
         ActivityFeedService $feedService,
         EntityManagerInterface $em,
@@ -177,11 +183,17 @@ final class PhotoController extends AbstractController
         $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $photo);
 
         $photoId = $photo->getId();
-        $imageProcessor->deleteFiles($photo);
-        $em->remove($photo);
-        $em->flush();
+        $reactionIds = $reactions->findIdsByTarget(Reaction::TARGET_PHOTO, $photoId);
 
-        $feedService->deleteForTarget(ActivityEvent::TARGET_PHOTO, $photoId);
+        $em->wrapInTransaction(static function () use ($em, $photo, $photoId, $reactionIds, $feedService): void {
+            $em->remove($photo);
+            $em->flush();
+
+            $feedService->deleteForTarget(ActivityEvent::TARGET_PHOTO, $photoId);
+            $feedService->deleteForTargets(ActivityEvent::TARGET_REACTION, $reactionIds);
+        });
+
+        $imageProcessor->deleteFiles($photo);
 
         return new JsonResponse(null, Response::HTTP_NO_CONTENT);
     }

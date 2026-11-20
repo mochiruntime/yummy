@@ -7,9 +7,11 @@ namespace App\Controller;
 use App\Dto\Poi\VisibilityInputDto;
 use App\Dto\Social\ReviewInputDto;
 use App\Entity\ActivityEvent;
+use App\Entity\Reaction;
 use App\Entity\Review;
 use App\Entity\User;
 use App\Repository\PoiRepository;
+use App\Repository\ReactionRepository;
 use App\Repository\ReviewRepository;
 use App\Security\Voter\ResourceOwnerVoter;
 use App\Service\ActivityFeedService;
@@ -94,10 +96,12 @@ final class ReviewController extends AbstractController
 
         $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $review);
 
-        $review->setIsPublic($dto->isPublic);
-        $em->flush();
+        $em->wrapInTransaction(static function () use ($review, $dto, $feedService, $em): void {
+            $review->setIsPublic($dto->isPublic);
+            $em->flush();
 
-        $feedService->syncVisibility(ActivityEvent::TARGET_REVIEW, $review->getId(), $dto->isPublic);
+            $feedService->syncVisibility(ActivityEvent::TARGET_REVIEW, $review->getId(), $dto->isPublic);
+        });
 
         return $this->json($review, context: ['groups' => ['review:read']]);
     }
@@ -109,6 +113,7 @@ final class ReviewController extends AbstractController
      *
      * @param string                 $id          UUID string of the target review
      * @param ReviewRepository       $reviews     Review repository
+     * @param ReactionRepository     $reactions   Reaction repository
      * @param ActivityFeedService    $feedService Activity feed service
      * @param EntityManagerInterface $em          Doctrine entity manager
      */
@@ -117,6 +122,7 @@ final class ReviewController extends AbstractController
     public function delete(
         string $id,
         ReviewRepository $reviews,
+        ReactionRepository $reactions,
         ActivityFeedService $feedService,
         EntityManagerInterface $em,
     ): JsonResponse {
@@ -128,10 +134,15 @@ final class ReviewController extends AbstractController
         $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $review);
 
         $reviewId = $review->getId();
-        $em->remove($review);
-        $em->flush();
+        $reactionIds = $reactions->findIdsByTarget(Reaction::TARGET_REVIEW, $reviewId);
 
-        $feedService->deleteForTarget(ActivityEvent::TARGET_REVIEW, $reviewId);
+        $em->wrapInTransaction(static function () use ($em, $review, $reviewId, $reactionIds, $feedService): void {
+            $em->remove($review);
+            $em->flush();
+
+            $feedService->deleteForTarget(ActivityEvent::TARGET_REVIEW, $reviewId);
+            $feedService->deleteForTargets(ActivityEvent::TARGET_REACTION, $reactionIds);
+        });
 
         return new JsonResponse(null, Response::HTTP_NO_CONTENT);
     }

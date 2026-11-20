@@ -140,37 +140,57 @@ class ActivityEvent
         $this->createdAt = new \DateTimeImmutable();
     }
 
+    /**
+     * Returns the event's UUIDv7 identifier.
+     */
     public function getId(): Uuid
     {
         return $this->id;
     }
 
+    /**
+     * Returns the member who performed the action.
+     */
     public function getActor(): User
     {
         return $this->actor;
     }
 
+    /**
+     * Returns the event type discriminator (ActivityEvent::EVENT_*).
+     */
     public function getEventType(): string
     {
         return $this->eventType;
     }
 
+    /**
+     * Returns the parent POI associated with this event.
+     */
     public function getPoi(): Poi
     {
         return $this->poi;
     }
 
+    /**
+     * Returns the polymorphic target entity type (ActivityEvent::TARGET_*).
+     */
     public function getTargetType(): string
     {
         return $this->targetType;
     }
 
+    /**
+     * Returns the UUID of the target entity referenced by targetType.
+     */
     public function getTargetId(): Uuid
     {
         return $this->targetId;
     }
 
     /**
+     * Returns structured metadata associated with this event.
+     *
      * @return array<string, mixed>
      */
     public function getPayload(): array
@@ -178,11 +198,17 @@ class ActivityEvent
         return $this->payload;
     }
 
+    /**
+     * Returns whether this event is visible to unauthenticated guests (subject to parent visibility).
+     */
     public function isPublic(): bool
     {
         return $this->isPublic;
     }
 
+    /**
+     * Updates the denormalized public visibility flag for this event.
+     */
     public function setIsPublic(bool $isPublic): self
     {
         $this->isPublic = $isPublic;
@@ -190,6 +216,9 @@ class ActivityEvent
         return $this;
     }
 
+    /**
+     * Returns the UTC timestamp when this event was recorded.
+     */
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;

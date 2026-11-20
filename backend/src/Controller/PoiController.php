@@ -266,10 +266,12 @@ final class PoiController extends AbstractController
         // Only the creator or an instance Admin can alter visibility
         $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $poi);
 
-        $poi->setIsPublic($dto->isPublic);
-        $em->flush();
+        $em->wrapInTransaction(static function () use ($poi, $dto, $feedService, $em): void {
+            $poi->setIsPublic($dto->isPublic);
+            $em->flush();
 
-        $feedService->syncVisibility(ActivityEvent::TARGET_POI, $poi->getId(), $dto->isPublic);
+            $feedService->syncVisibility(ActivityEvent::TARGET_POI, $poi->getId(), $dto->isPublic);
+        });
 
         return $this->json($poi, context: ['groups' => ['poi:summary']]);
     }

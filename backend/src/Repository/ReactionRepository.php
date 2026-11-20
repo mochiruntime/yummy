@@ -54,6 +54,29 @@ class ReactionRepository extends ServiceEntityRepository
     }
 
     /**
+     * Returns the UUIDs of all reactions targeting a specific entity.
+     *
+     * @param string $targetType Target discriminator ('poi', 'review', or 'photo')
+     * @param Uuid   $targetId   Target entity UUID
+     *
+     * @return list<Uuid>
+     */
+    public function findIdsByTarget(string $targetType, Uuid $targetId): array
+    {
+        /** @var list<array{id: Uuid}> $rows */
+        $rows = $this->createQueryBuilder('r')
+            ->select('r.id')
+            ->andWhere('r.targetType = :targetType')
+            ->andWhere('r.targetId = :targetId')
+            ->setParameter('targetType', $targetType)
+            ->setParameter('targetId', $targetId->toBinary())
+            ->getQuery()
+            ->getArrayResult();
+
+        return array_map(static fn (array $row): Uuid => $row['id'], $rows);
+    }
+
+    /**
      * Aggregates reactions for a single target entity (POI, Review, or Photo).
      *
      * @param string    $targetType Target discriminator ('poi', 'review', or 'photo')

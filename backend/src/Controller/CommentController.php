@@ -94,10 +94,12 @@ final class CommentController extends AbstractController
 
         $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $comment);
 
-        $comment->setIsPublic($dto->isPublic);
-        $em->flush();
+        $em->wrapInTransaction(static function () use ($comment, $dto, $feedService, $em): void {
+            $comment->setIsPublic($dto->isPublic);
+            $em->flush();
 
-        $feedService->syncVisibility(ActivityEvent::TARGET_COMMENT, $comment->getId(), $dto->isPublic);
+            $feedService->syncVisibility(ActivityEvent::TARGET_COMMENT, $comment->getId(), $dto->isPublic);
+        });
 
         return $this->json($comment, context: ['groups' => ['comment:read']]);
     }
@@ -126,10 +128,12 @@ final class CommentController extends AbstractController
         $this->denyAccessUnlessGranted(ResourceOwnerVoter::MANAGE, $comment);
 
         $commentId = $comment->getId();
-        $em->remove($comment);
-        $em->flush();
+        $em->wrapInTransaction(static function () use ($em, $comment, $commentId, $feedService): void {
+            $em->remove($comment);
+            $em->flush();
 
-        $feedService->deleteForTarget(ActivityEvent::TARGET_COMMENT, $commentId);
+            $feedService->deleteForTarget(ActivityEvent::TARGET_COMMENT, $commentId);
+        });
 
         return new JsonResponse(null, Response::HTTP_NO_CONTENT);
     }

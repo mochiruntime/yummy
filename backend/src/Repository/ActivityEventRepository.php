@@ -128,4 +128,32 @@ class ActivityEventRepository extends ServiceEntityRepository
 
         return $deleted;
     }
+
+    /**
+     * Deletes all activity events referencing any of the given target entity UUIDs.
+     *
+     * @param string     $targetType Target discriminator (ActivityEvent::TARGET_*)
+     * @param list<Uuid> $targetIds  Target entity UUIDs
+     */
+    public function deleteByTargets(string $targetType, array $targetIds): int
+    {
+        if ($targetIds === []) {
+            return 0;
+        }
+
+        // Convert UUID objects to raw 16-byte binary strings for exact BINARY(16) IN (:targetIds) matching.
+        $binaryIds = array_map(static fn (Uuid $id): string => $id->toBinary(), $targetIds);
+
+        /** @var int $deleted */
+        $deleted = $this->createQueryBuilder('e')
+            ->delete()
+            ->andWhere('e.targetType = :targetType')
+            ->andWhere('e.targetId IN (:targetIds)')
+            ->setParameter('targetType', $targetType)
+            ->setParameter('targetIds', $binaryIds)
+            ->getQuery()
+            ->execute();
+
+        return $deleted;
+    }
 }
