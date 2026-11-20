@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
-import { AppRoutes } from "../../../App";
+import { AppRoutes, createAppQueryClient } from "../../../App";
 import { AuthProvider } from "../../../context/AuthContext";
 
 // Isolate auth flow tests from WebGL/JSDOM canvas limitations
@@ -64,6 +64,7 @@ function renderAt(
 describe("Auth & Invite Flows", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("does not consume magic-link token on GET/mount, only on explicit button click", async () => {
@@ -343,5 +344,82 @@ describe("Auth & Invite Flows", () => {
     fireEvent.click(btn);
 
     expect(await screen.findByText(/invalid or expired magic link/i)).toBeInTheDocument();
+  });
+
+  it("clears session cache and shows session expired notice when a mutation returns 401", async () => {
+    document.cookie = "XSRF-TOKEN=test-csrf-token; path=/";
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input instanceof Request ? input.url : "";
+      if (url === "/api/config") return Promise.resolve(jsonResponse(DEFAULT_CONFIG));
+      if (url === "/api/auth/me") return Promise.resolve(jsonResponse(ADMIN_USER));
+      if (url === "/api/auth/csrf") return Promise.resolve(new Response(null, { status: 204 }));
+      if (url === "/api/lists" && (!init?.method || init.method === "GET")) {
+        return Promise.resolve(jsonResponse([]));
+      }
+      if (url === "/api/lists" && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ error: "Authentication required." }, 401));
+      }
+      if (url.startsWith("/api/pois")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse({ error: "Not found" }, 404));
+    });
+
+    const queryClient = createAppQueryClient();
+    const loc = memoryLocation({ path: "/", record: true });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <Router hook={loc.hook}>
+            <AppRoutes />
+          </Router>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("tab", { name: /lists/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /add list/i }));
+    fireEvent.change(screen.getByLabelText(/list name/i), { target: { value: "Expired Test" } });
+    fireEvent.click(screen.getByRole("button", { name: /create list/i }));
+
+    expect(await screen.findByText(/your session expired\. please sign in again\./i)).toBeInTheDocument();
+    expect(await screen.findAllByRole("button", { name: /^sign in$/i })).toHaveLength(2);
+  });
+
+  it("clears session cache across tabs when BroadcastChannel receives signed-out", async () => {
+    const channels = new Set<{ onmessage: ((ev: MessageEvent) => void) | null }>();
+    class MockBroadcastChannel {
+      onmessage: ((ev: MessageEvent) => void) | null = null;
+      constructor() {
+        channels.add(this);
+      }
+      postMessage(data: unknown) {
+        for (const ch of channels) {
+          if (ch !== this && ch.onmessage) {
+            ch.onmessage({ data } as MessageEvent);
+          }
+        }
+      }
+      close() {
+        channels.delete(this);
+      }
+    }
+    vi.stubGlobal("BroadcastChannel", MockBroadcastChannel);
+
+    renderAt("/", async (url) => {
+      if (url === "/api/config") return jsonResponse(DEFAULT_CONFIG);
+      if (url === "/api/auth/me") return jsonResponse(ADMIN_USER);
+      if (url === "/api/lists") return jsonResponse([]);
+      if (url.startsWith("/api/pois")) return jsonResponse([]);
+      return jsonResponse({ error: "Not found" }, 404);
+    });
+
+    expect(await screen.findByRole("button", { name: /sign out/i })).toBeInTheDocument();
+
+    const peer = new MockBroadcastChannel();
+    peer.postMessage({ type: "signed-out" });
+    peer.close();
+
+    expect(await screen.findByRole("button", { name: /^sign in$/i })).toBeInTheDocument();
+    expect(screen.queryByText(/your session expired/i)).not.toBeInTheDocument();
   });
 });

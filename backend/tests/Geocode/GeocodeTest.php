@@ -9,13 +9,14 @@ use App\Entity\User;
 use App\Repository\GeocodeCacheRepository;
 use App\Service\GeocodingService;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
 /**
- * Tests for the geocoding endpoint, Photon provider, Nominatim fallback, and database caching.
+ * Tests for the geocoding endpoint, Photon provider, Nominatim fallback, database caching, and rate limiting.
  */
 final class GeocodeTest extends WebTestCase
 {
@@ -28,12 +29,67 @@ final class GeocodeTest extends WebTestCase
         $em = static::getContainer()->get(EntityManagerInterface::class);
         \assert($em instanceof EntityManagerInterface);
         $this->em = $em;
+
+        $rateLimiterCache = static::getContainer()->get('cache.rate_limiter');
+        \assert($rateLimiterCache instanceof CacheItemPoolInterface);
+        $rateLimiterCache->clear();
     }
 
-    public function testGeocodeRequiresAuthentication(): void
+    public function testGeocodeAllowsGuestWhenPublicBrowsingEnabled(): void
     {
+        $hashKey = hash('sha256', sprintf('%s|%.4f|%.4f', 'paris', 0.0, 0.0));
+        $cachedData = [
+            [
+                'label' => 'Paris, France',
+                'address' => 'Île-de-France, France',
+                'latitude' => 48.8566,
+                'longitude' => 2.3522,
+            ],
+        ];
+        $this->em->persist(new GeocodeCache($hashKey, 'photon', $cachedData, new \DateTimeImmutable('+30 days')));
+        $this->em->flush();
+
         $this->client->request('GET', '/api/geocode?q=Paris');
-        self::assertResponseStatusCodeSame(401);
+        self::assertResponseStatusCodeSame(200);
+
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertIsArray($data);
+        self::assertCount(1, $data);
+        self::assertSame('Paris, France', $data[0]['label']);
+    }
+
+    public function testGeocodeRateLimitsPublicGuestsAndIsolatesMemberBucket(): void
+    {
+        $hashKey = hash('sha256', sprintf('%s|%.4f|%.4f', 'paris', 0.0, 0.0));
+        $cachedData = [
+            [
+                'label' => 'Paris, France',
+                'address' => 'Île-de-France, France',
+                'latitude' => 48.8566,
+                'longitude' => 2.3522,
+            ],
+        ];
+        $this->em->persist(new GeocodeCache($hashKey, 'photon', $cachedData, new \DateTimeImmutable('+30 days')));
+
+        $member = new User('member@yummy.test', 'Member');
+        $this->em->persist($member);
+        $this->em->flush();
+
+        for ($i = 0; $i < 40; ++$i) {
+            $this->client->request('GET', '/api/geocode?q=Paris');
+            self::assertResponseStatusCodeSame(200);
+        }
+
+        // 41st guest request from the same IP is rejected with 429
+        $this->client->request('GET', '/api/geocode?q=Paris');
+        self::assertResponseStatusCodeSame(429);
+        $error = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('error', $error);
+
+        // Authenticated members use their own geocode_member bucket and are unaffected
+        $this->client->loginUser($member);
+        $this->client->request('GET', '/api/geocode?q=Paris');
+        self::assertResponseStatusCodeSame(200);
     }
 
     public function testGeocodeRejectsShortQuery(): void

@@ -193,4 +193,47 @@ describe("MapWorkspace Shell & Geocode Search", () => {
       zoom: 15,
     });
   });
+
+  it("allows unauthenticated guests to use geocode autocomplete and displays 429 rate-limit notice", async () => {
+    let calls = 0;
+
+    renderShell(async (url) => {
+      if (url === "/api/config") {
+        return jsonResponse({
+          googleMapsEnabled: false,
+          googleMapsApiKey: null,
+          defaultMapStyleUrl: "https://tiles.openfreemap.org/styles/liberty",
+          pmtilesUrl: null,
+          geocoderProvider: "photon",
+          publicBrowsingEnabled: true,
+        });
+      }
+      if (url === "/api/auth/me") return jsonResponse({ error: "Unauthorized" }, 401);
+      if (url === "/api/lists") return jsonResponse([]);
+      if (url.startsWith("/api/pois")) return jsonResponse([]);
+      if (url.startsWith("/api/geocode")) {
+        calls += 1;
+        if (calls === 1) {
+          return jsonResponse([
+            {
+              label: "Bastille",
+              address: "Paris, France",
+              latitude: 48.853,
+              longitude: 2.369,
+            },
+          ]);
+        }
+        return jsonResponse({ error: "Too many search requests." }, 429);
+      }
+      return jsonResponse({ error: "Not found" }, 404);
+    }, true);
+
+    const searchInput = await screen.findByRole("searchbox", { name: /search places/i });
+    fireEvent.change(searchInput, { target: { value: "Bastille" } });
+
+    expect(await screen.findByText("Paris, France")).toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: "Marais" } });
+    expect(await screen.findByText(/too many searches/i)).toBeInTheDocument();
+  });
 });

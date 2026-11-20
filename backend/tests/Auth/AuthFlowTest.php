@@ -436,6 +436,20 @@ final class AuthFlowTest extends WebTestCase
         self::assertResponseStatusCodeSame(400);
     }
 
+    /**
+     * Verifies persistent 30-day PWA session lifetime and secure cookie defaults.
+     */
+    public function testSessionConfigurationIsPersistentAndHardened(): void
+    {
+        /** @var array<string, mixed> $options */
+        $options = self::getContainer()->getParameter('session.storage.options');
+
+        self::assertSame(2592000, $options['cookie_lifetime'] ?? null);
+        self::assertSame(2592000, $options['gc_maxlifetime'] ?? null);
+        self::assertTrue($options['cookie_httponly'] ?? false);
+        self::assertSame('lax', $options['cookie_samesite'] ?? null);
+    }
+
     private function fetchCsrfToken(): string
     {
         $this->client->request('GET', '/api/auth/csrf');

@@ -2,8 +2,12 @@ framework:
     secret: '%env(APP_SECRET)%'
     http_method_override: false
     handle_all_throwables: true
+    # Production behind a reverse proxy (Caddy/Nginx/Cloudflare): configure trusted_proxies & trusted_headers
+    # so $request->getClientIp() resolves the visitor's real IP for IP-keyed rate limiters (e.g. geocode_public).
     session:
         handler_id: Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler
+        cookie_lifetime: 2592000 # 30 days — persists across browser/PWA restarts
+        gc_maxlifetime: 2592000  # 30 days — aligns PdoSessionHandler sess_lifetime with cookie
         cookie_secure: auto
         cookie_httponly: true
         cookie_samesite: lax

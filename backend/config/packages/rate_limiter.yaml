@@ -12,3 +12,12 @@ framework:
             policy: sliding_window
             limit: 10
             interval: '15 minutes'
+        # IP-keyed limiters require Symfony `trusted_proxies` in framework.yaml behind a reverse proxy.
+        geocode_public:
+            policy: sliding_window
+            limit: 40
+            interval: '5 minutes'
+        geocode_member:
+            policy: sliding_window
+            limit: 120
+            interval: '5 minutes'
