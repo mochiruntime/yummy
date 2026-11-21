@@ -24,6 +24,42 @@ final class PoiFilterQueryDto
     public ?string $listIds = null;
 
     /**
+     * Optional maximum number of POIs to return per page (1-100). Omit for full viewport results.
+     */
+    #[Assert\Range(min: 1, max: 100, notInRangeMessage: 'Limit must be between 1 and 100.')]
+    public ?int $limit = null;
+
+    /**
+     * Optional zero-based pagination offset (>= 0).
+     */
+    #[Assert\PositiveOrZero(message: 'Offset must be 0 or greater.')]
+    public int $offset = 0;
+
+    /**
+     * When true, restricts results to POIs created by the authenticated user.
+     */
+    public bool $mine = false;
+
+    /**
+     * Optional search string matching POI name or address (max 100 characters).
+     */
+    #[Assert\Length(max: 100, maxMessage: 'Search query cannot exceed 100 characters.')]
+    public ?string $q = null;
+
+    /**
+     * Returns the trimmed search query string, or null when empty.
+     */
+    public function getTrimmedQuery(): ?string
+    {
+        if ($this->q === null) {
+            return null;
+        }
+        $trimmed = trim($this->q);
+
+        return $trimmed !== '' ? $trimmed : null;
+    }
+
+    /**
      * Validates the bounding box format and WGS 84 coordinate bounds.
      */
     #[Assert\Callback]

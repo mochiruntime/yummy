@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\Poi;
+use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\Tools\Pagination\Paginator;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Uid\Uuid;
 
@@ -24,25 +26,49 @@ class PoiRepository extends ServiceEntityRepository
     }
 
     /**
-     * Finds POIs matching optional bounding-box coordinates and list filters, enforcing guest visibility.
+     * Finds POIs matching optional bounding-box coordinates, list filters, creator scope, search query, and pagination.
      *
-     * @param array{minLng: float, minLat: float, maxLng: float, maxLat: float}|null $bbox    Viewport bounding box
-     * @param list<string>                                                           $listIds Category/list filter IDs
-     * @param bool                                                                   $isGuest Whether the viewer is unauthenticated
+     * @param array{minLng: float, minLat: float, maxLng: float, maxLat: float}|null $bbox        Viewport bounding box
+     * @param list<string>                                                           $listIds     Category/list filter IDs
+     * @param bool                                                                   $isGuest     Whether the viewer is unauthenticated
+     * @param User|null                                                              $mineAuthor  When set, restricts to POIs created by this user
+     * @param string|null                                                            $searchQuery Optional case-insensitive name/address filter
+     * @param int|null                                                               $limit       Optional page size (uses Doctrine Paginator for to-many join safety)
+     * @param int                                                                    $offset      Zero-based page offset when $limit is set
      *
      * @return list<Poi>
      */
-    public function findByFilters(?array $bbox, array $listIds, bool $isGuest): array
-    {
+    public function findByFilters(
+        ?array $bbox,
+        array $listIds,
+        bool $isGuest,
+        ?User $mineAuthor = null,
+        ?string $searchQuery = null,
+        ?int $limit = null,
+        int $offset = 0,
+    ): array {
         $qb = $this->createQueryBuilder('p')
             ->leftJoin('p.lists', 'l')
             ->addSelect('l')
-            ->orderBy('p.createdAt', 'DESC');
+            ->orderBy('p.createdAt', 'DESC')
+            ->addOrderBy('p.id', 'DESC');
 
         // Unauthenticated guests may only view POIs explicitly marked as public by their creators.
         // Authenticated members are permitted to view both public POIs and instance-private POIs.
         if ($isGuest) {
             $qb->andWhere('p.isPublic = true');
+        }
+
+        if ($mineAuthor !== null) {
+            $qb->andWhere('p.createdBy = :mineAuthor')
+                ->setParameter('mineAuthor', $mineAuthor->getId()->toBinary());
+        }
+
+        if ($searchQuery !== null && $searchQuery !== '') {
+            // Escape LIKE wildcards using '!' so literal '%' or '_' characters in user queries do not broaden matches.
+            $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($searchQuery));
+            $qb->andWhere('(LOWER(p.name) LIKE :searchPattern ESCAPE \'!\' OR LOWER(COALESCE(p.address, \'\')) LIKE :searchPattern ESCAPE \'!\')')
+                ->setParameter('searchPattern', '%'.$escaped.'%');
         }
 
         // Apply rectangular bounding-box (viewport) filter if provided by the frontend map canvas.
@@ -66,8 +92,19 @@ class PoiRepository extends ServiceEntityRepository
             }
         }
 
+        $dqlQuery = $qb->getQuery();
+
+        if ($limit !== null) {
+            $dqlQuery->setFirstResult($offset)->setMaxResults($limit);
+            // fetchJoinCollection: true paginates distinct Poi roots rather than joined (poi, list) rows.
+            /** @var Paginator<Poi> $paginator */
+            $paginator = new Paginator($dqlQuery, fetchJoinCollection: true);
+
+            return array_values(iterator_to_array($paginator));
+        }
+
         /** @var list<Poi> $results */
-        $results = $qb->getQuery()->getResult();
+        $results = $dqlQuery->getResult();
 
         return $results;
     }

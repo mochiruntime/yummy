@@ -20,6 +20,9 @@ export const poiKeys = {
         : "all",
       [...listIds].sort().join(","),
     ] as const,
+  infinite: (listIds: readonly string[], mine: boolean, q: string) =>
+    ["pois", "infinite", [...listIds].sort().join(","), mine ? "mine" : "all", q] as const,
+  search: (q: string) => ["pois", "search", q] as const,
   detail: (id: string) => ["pois", "detail", id] as const,
   revisions: (id: string) => ["pois", "revisions", id] as const,
 };
@@ -27,6 +30,10 @@ export const poiKeys = {
 export function fetchPois(params: {
   bbox?: BBox | null;
   listIds?: readonly string[];
+  limit?: number;
+  offset?: number;
+  mine?: boolean;
+  q?: string;
   signal?: AbortSignal;
 }): Promise<PoiSummary[]> {
   const search = new URLSearchParams();
@@ -36,6 +43,18 @@ export function fetchPois(params: {
   }
   if (params.listIds && params.listIds.length > 0) {
     search.set("listIds", params.listIds.join(","));
+  }
+  if (params.limit !== undefined) {
+    search.set("limit", String(params.limit));
+  }
+  if (params.offset !== undefined && params.offset > 0) {
+    search.set("offset", String(params.offset));
+  }
+  if (params.mine) {
+    search.set("mine", "1");
+  }
+  if (params.q && params.q.trim()) {
+    search.set("q", params.q.trim());
   }
   const qs = search.toString();
   return apiFetch<PoiSummary[]>(qs ? `/api/pois?${qs}` : "/api/pois", {

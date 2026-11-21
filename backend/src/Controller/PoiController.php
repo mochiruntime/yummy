@@ -54,8 +54,20 @@ final class PoiController extends AbstractController
         #[MapQueryString(validationFailedStatusCode: Response::HTTP_BAD_REQUEST)] PoiFilterQueryDto $query = new PoiFilterQueryDto(),
         #[CurrentUser] ?User $user = null,
     ): JsonResponse {
+        if ($query->mine && $user === null) {
+            return $this->json([]);
+        }
+
         // Guests only see public POIs; authenticated members see public POIs and instance POIs
-        $results = $pois->findByFilters($query->toBbox(), $query->toListIds(), $user === null);
+        $results = $pois->findByFilters(
+            $query->toBbox(),
+            $query->toListIds(),
+            $user === null,
+            $query->mine ? $user : null,
+            $query->getTrimmedQuery(),
+            $query->limit,
+            $query->offset,
+        );
 
         return $this->json($results, context: ['groups' => ['poi:summary']]);
     }

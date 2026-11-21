@@ -539,6 +539,74 @@ final class PoiLifecycleTest extends WebTestCase
         self::assertSame(2.3600, $data['longitude']);
     }
 
+    public function testPaginatedMineAndSearchFiltersOnPoisIndex(): void
+    {
+        $alice = new User('alice-page@yummy.test', 'Alice');
+        $bob = new User('bob-page@yummy.test', 'Bob');
+        $listA = new PoiList($alice, 'List A');
+        $listB = new PoiList($alice, 'List B');
+        $this->em->persist($alice);
+        $this->em->persist($bob);
+        $this->em->persist($listA);
+        $this->em->persist($listB);
+
+        $poi1 = new Poi($alice, '100% Matcha', 47.37, 8.54, null, 'Zurich', true);
+        $poi1->addList($listA);
+        $poi1->addList($listB);
+        $poi2 = new Poi($alice, 'Espresso Lab', 47.38, 8.55, null, 'Zurich', false);
+        $poi3 = new Poi($bob, 'Bob Bakery', 47.39, 8.56, null, 'Bern', true);
+
+        $this->em->persist($poi1);
+        $this->em->persist($poi2);
+        $this->em->persist($poi3);
+        $this->em->flush();
+
+        // Guest requesting mine=1 gets empty list
+        $this->client->request('GET', '/api/pois?mine=1');
+        self::assertResponseIsSuccessful();
+        self::assertSame([], json_decode((string) $this->client->getResponse()->getContent(), true));
+
+        // Authenticated pagination with multi-list POI returns distinct POIs across pages
+        $this->client->loginUser($alice);
+        $this->client->request('GET', '/api/pois?limit=2&offset=0');
+        self::assertResponseIsSuccessful();
+        $page1 = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertIsArray($page1);
+        self::assertCount(2, $page1);
+        self::assertArrayHasKey('createdById', $page1[0]);
+
+        $this->client->request('GET', '/api/pois?limit=2&offset=2');
+        self::assertResponseIsSuccessful();
+        $page2 = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertIsArray($page2);
+        self::assertCount(1, $page2);
+
+        $allIds = array_column(array_merge($page1, $page2), 'id');
+        self::assertCount(3, array_unique($allIds));
+
+        // mine=1 returns only Alice's 2 POIs
+        $this->client->request('GET', '/api/pois?mine=1');
+        self::assertResponseIsSuccessful();
+        $mine = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertIsArray($mine);
+        self::assertCount(2, $mine);
+        foreach ($mine as $item) {
+            self::assertSame($alice->getId()->toRfc4122(), $item['createdById']);
+        }
+
+        // Literal '%' in q is escaped and only matches '100% Matcha'
+        $this->client->request('GET', '/api/pois?q='.urlencode('100%'));
+        self::assertResponseIsSuccessful();
+        $matched = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertIsArray($matched);
+        self::assertCount(1, $matched);
+        self::assertSame('100% Matcha', $matched[0]['name']);
+
+        // Invalid limit -> 400
+        $this->client->request('GET', '/api/pois?limit=0');
+        self::assertResponseStatusCodeSame(400);
+    }
+
     private function fetchCsrfToken(): string
     {
         $this->client->request('GET', '/api/auth/csrf');

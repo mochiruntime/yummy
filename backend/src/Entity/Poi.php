@@ -203,6 +203,16 @@ class Poi
     }
 
     /**
+     * Returns the creator's RFC 4122 UUID string for lightweight summary serialization.
+     */
+    #[Groups(['poi:summary'])]
+    #[SerializedName('createdById')]
+    public function getCreatedById(): string
+    {
+        return $this->createdBy->getId()->toRfc4122();
+    }
+
+    /**
      * Returns a lightweight summary of the creator for API serialization.
      *
      * @return array{id: string, displayName: string}

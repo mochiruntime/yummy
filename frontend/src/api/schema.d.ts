@@ -617,6 +617,8 @@ export interface components {
         PoiSummary: {
             /** Format: uuid */
             id: string;
+            /** Format: uuid */
+            createdById: string;
             name: string;
             latitude: number;
             longitude: number;
@@ -1234,6 +1236,10 @@ export interface operations {
                 /** @description minLng,minLat,maxLng,maxLat */
                 bbox?: string;
                 listIds?: string;
+                limit?: number;
+                offset?: number;
+                mine?: boolean;
+                q?: string;
             };
             header?: never;
             path?: never;

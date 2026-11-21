@@ -395,6 +395,26 @@ paths:
           schema:
             type: string
             description: Comma-separated list UUIDs
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+        - name: mine
+          in: query
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 100
       responses:
         "200":
           description: Matching POIs
@@ -998,9 +1018,12 @@ components:
 
     PoiSummary:
       type: object
-      required: [id, name, latitude, longitude, isPublic, version, lists]
+      required: [id, name, latitude, longitude, isPublic, version, createdById, lists]
       properties:
         id:
+          type: string
+          format: uuid
+        createdById:
           type: string
           format: uuid
         name:
