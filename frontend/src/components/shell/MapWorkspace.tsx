@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Filter, List, MapPin, Plus, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
@@ -8,6 +8,7 @@ import { fetchPois, poiKeys, searchGeocode } from "../../api/pois";
 import type { BBox, GeocodeResult, PoiDetail, PoiList, PoiSummary } from "../../api/types";
 import { useAuth } from "../../context/AuthContext";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
+import { ListDetailPanel } from "../lists/ListDetailPanel";
 import { ListManagerModal } from "../lists/ListManagerModal";
 import { ListsTabPanel } from "../lists/ListsTabPanel";
 import { GoogleMapsConsentModal } from "../map/GoogleMapsConsentModal";
@@ -18,8 +19,10 @@ import { PoiDetailPanel } from "../pois/PoiDetailPanel";
 import { PoiRevisionsModal } from "../pois/PoiRevisionsModal";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
 import { BottomSheet, type SheetSnap } from "./BottomSheet";
-import { SpotsTabPanel } from "./SpotsTabPanel";
+import { SpotsTabPanel, type SpotsScope } from "./SpotsTabPanel";
 import { TopNavBar } from "./TopNavBar";
+
+const SPOTS_PAGE_SIZE = 30;
 
 const GoogleMapsCanvas = lazy(() =>
   import("../map/GoogleMapsCanvas").then((mod) => ({ default: mod.GoogleMapsCanvas })),
@@ -59,10 +62,13 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
   );
 
   const [activeTab, setActiveTab] = useState<"spots" | "lists">("spots");
+  const [spotsScope, setSpotsScope] = useState<SpotsScope>("area");
+  const effectiveSpotsScope: SpotsScope = user === null && spotsScope === "mine" ? "area" : spotsScope;
   const [bbox, setBbox] = useState<BBox | null>(null);
   const [searchText, setSearchText] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedPoiId, setSelectedPoiId] = useState<string | null>(selectedPoiRouteId ?? null);
+  const [closingPoiId, setClosingPoiId] = useState<string | null>(null);
   const [prevRoutePoiId, setPrevRoutePoiId] = useState<string | undefined>(selectedPoiRouteId);
   const [flyToTarget, setFlyToTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(
     null,
@@ -141,6 +147,36 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
     placeholderData: keepPreviousData,
   });
 
+  const infiniteSpotsQuery = useInfiniteQuery({
+    queryKey: poiKeys.infinite(
+      selectedListIds,
+      effectiveSpotsScope === "mine",
+      "",
+    ),
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) =>
+      fetchPois({
+        listIds: selectedListIds,
+        limit: SPOTS_PAGE_SIZE,
+        offset: pageParam,
+        mine: effectiveSpotsScope === "mine",
+        signal,
+      }),
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < SPOTS_PAGE_SIZE
+        ? undefined
+        : allPages.reduce((sum, page) => sum + page.length, 0),
+    enabled: effectiveSpotsScope !== "area" && !isSharedListRoute,
+  });
+
+  const globalSpotSearchQuery = useQuery({
+    queryKey: poiKeys.search(debouncedQuery),
+    queryFn: ({ signal }) => fetchPois({ q: debouncedQuery, limit: 5, signal }),
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 30_000,
+    retry: false,
+  });
+
   const mapCenter = useMemo(() => {
     if (!bbox) {
       return null;
@@ -176,17 +212,25 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
     [isSharedListRoute, isValidSharedListId, poisQuery.data],
   );
 
-  const filteredPois = useMemo(() => {
-    const q = searchText.trim().toLowerCase();
-    if (!q) {
+  const matchingLists = useMemo(() => {
+    const q = debouncedQuery.toLowerCase();
+    if (q.length < 2) {
+      return [];
+    }
+    return lists
+      .filter(
+        (list) =>
+          list.name.toLowerCase().includes(q) || list.ownerName.toLowerCase().includes(q),
+      )
+      .slice(0, 5);
+  }, [lists, debouncedQuery]);
+
+  const sidebarSpots = useMemo(() => {
+    if (effectiveSpotsScope === "area") {
       return pois;
     }
-    return pois.filter(
-      (poi) =>
-        poi.name.toLowerCase().includes(q) ||
-        (poi.address && poi.address.toLowerCase().includes(q)),
-    );
-  }, [pois, searchText]);
+    return infiniteSpotsQuery.data?.pages.flat() ?? [];
+  }, [effectiveSpotsScope, pois, infiniteSpotsQuery.data]);
 
   const fitBoundsPoints = useMemo(() => {
     if (!isSharedListRoute || !isValidSharedListId || !poisQuery.data) {
@@ -213,12 +257,56 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
     [pinDropMode],
   );
 
-  const handleSelectPoi = useCallback((poi: PoiSummary) => {
-    setSelectedPoiId(poi.id);
-    setFlyToTarget({ lat: poi.latitude, lng: poi.longitude });
-    setActiveTab("spots");
-    setSheetSnap("half");
-  }, []);
+  const handleSelectPoi = useCallback(
+    (poi: PoiSummary) => {
+      setClosingPoiId(null);
+      setSelectedPoiId(poi.id);
+      setFlyToTarget({ lat: poi.latitude, lng: poi.longitude });
+      if (!isDesktop) {
+        setActiveTab("spots");
+        setSheetSnap("half");
+      }
+    },
+    [isDesktop],
+  );
+
+  const handleClosePoiDetail = useCallback(() => {
+    setClosingPoiId(selectedPoiId);
+    setSelectedPoiId(null);
+    if (selectedPoiRouteId) {
+      navigate("/");
+    }
+  }, [selectedPoiId, selectedPoiRouteId, navigate]);
+
+  useEffect(() => {
+    if (
+      !isDesktop ||
+      !selectedPoiId ||
+      editingPoiDetail ||
+      historyPoi ||
+      createPoiOpen ||
+      listManagerOpen ||
+      consentModalOpen
+    ) {
+      return;
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        handleClosePoiDetail();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isDesktop,
+    selectedPoiId,
+    editingPoiDetail,
+    historyPoi,
+    createPoiOpen,
+    listManagerOpen,
+    consentModalOpen,
+    handleClosePoiDetail,
+  ]);
 
   const handleSelectGeocode = (result: GeocodeResult) => {
     setFlyToTarget({ lat: result.latitude, lng: result.longitude, zoom: 15 });
@@ -248,7 +336,7 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
     return `${selectedListIds.length} lists`;
   }, [isSharedListRoute, selectedListIds, lists]);
 
-  const currentTab = isSharedListRoute ? "spots" : activeTab;
+  const currentTab = isSharedListRoute ? "lists" : activeTab;
 
   const tabBar = (
     <div role="tablist" aria-label="Browse sections" className="flex items-center gap-1">
@@ -256,7 +344,12 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
         type="button"
         role="tab"
         aria-selected={currentTab === "spots"}
-        onClick={() => setActiveTab("spots")}
+        onClick={() => {
+          if (isSharedListRoute) {
+            navigate("/");
+          }
+          setActiveTab("spots");
+        }}
         className={`inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-colors ${
           currentTab === "spots"
             ? "bg-[var(--accent-brand)]/10 text-[var(--accent-brand)]"
@@ -264,7 +357,7 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
         }`}
       >
         <MapPin aria-hidden="true" className="h-4 w-4" />
-        Spots ({filteredPois.length})
+        Spots
       </button>
 
       <button
@@ -284,52 +377,56 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
         }`}
       >
         <List aria-hidden="true" className="h-4 w-4" />
-        Lists ({lists.length})
+        Lists
       </button>
     </div>
   );
 
+  const renderPoiDetail = (targetPoiId: string, variant: "inline" | "drawer") => (
+    <PoiDetailPanel
+      poiId={targetPoiId}
+      variant={variant}
+      lists={lists}
+      currentUser={user}
+      isAdmin={isAdmin}
+      onBack={handleClosePoiDetail}
+      onEdit={(detail) => setEditingPoiDetail(detail)}
+      onOpenHistory={(detail) =>
+        setHistoryPoi({
+          id: detail.id,
+          name: detail.name,
+          version: detail.version,
+          canManage: Boolean(user && (isAdmin || detail.createdBy?.id === user.id)),
+        })
+      }
+      onDeleted={() => {
+        setClosingPoiId(null);
+        setSelectedPoiId(null);
+        if (selectedPoiRouteId) {
+          navigate("/");
+        }
+      }}
+    />
+  );
+
   const panelBody =
     currentTab === "spots" ? (
-      selectedPoiId ? (
-        <PoiDetailPanel
-          poiId={selectedPoiId}
-          lists={lists}
-          currentUser={user}
-          isAdmin={isAdmin}
-          onBack={() => {
-            setSelectedPoiId(null);
-            if (selectedPoiRouteId) {
-              navigate("/");
-            }
-          }}
-          onEdit={(detail) => setEditingPoiDetail(detail)}
-          onOpenHistory={(detail) =>
-            setHistoryPoi({
-              id: detail.id,
-              name: detail.name,
-              version: detail.version,
-              canManage: Boolean(user && (isAdmin || detail.createdBy?.id === user.id)),
-            })
-          }
-          onDeleted={() => {
-            setSelectedPoiId(null);
-            if (selectedPoiRouteId) {
-              navigate("/");
-            }
-          }}
-        />
+      !isDesktop && selectedPoiId ? (
+        renderPoiDetail(selectedPoiId, "inline")
       ) : (
         <SpotsTabPanel
-          pois={filteredPois}
-          isLoading={poisQuery.isPending}
+          pois={sidebarSpots}
+          isLoading={effectiveSpotsScope === "area" ? poisQuery.isPending : infiniteSpotsQuery.isPending}
           selectedPoiId={selectedPoiId}
           onSelectPoi={handleSelectPoi}
-          isSharedListRoute={isSharedListRoute}
-          isValidSharedListId={isValidSharedListId}
-          sharedList={sharedList}
-          isListsLoading={listsQuery.isPending}
+          scope={effectiveSpotsScope}
+          onScopeChange={setSpotsScope}
           isAuthenticated={user !== null}
+          hasMore={Boolean(infiniteSpotsQuery.hasNextPage)}
+          isLoadingMore={infiniteSpotsQuery.isFetchingNextPage}
+          onLoadMore={() => {
+            void infiniteSpotsQuery.fetchNextPage();
+          }}
           pinDropMode={pinDropMode}
           droppedCoords={droppedCoords}
           onCancelPinDrop={() => {
@@ -338,6 +435,17 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
           }}
         />
       )
+    ) : isSharedListRoute ? (
+      <ListDetailPanel
+        sharedList={sharedList}
+        isListsLoading={listsQuery.isPending}
+        isValidSharedListId={isValidSharedListId}
+        pois={pois}
+        isPoisLoading={poisQuery.isPending}
+        selectedPoiId={selectedPoiId}
+        isAuthenticated={user !== null}
+        onSelectPoi={handleSelectPoi}
+      />
     ) : (
       <ListsTabPanel
         lists={lists}
@@ -368,8 +476,20 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
           setSearchText("");
           setDebouncedQuery("");
         }}
+        spotSuggestions={globalSpotSearchQuery.data ?? []}
+        onSelectSpotSuggestion={(poi) => {
+          handleSelectPoi(poi);
+          setSearchText("");
+          setDebouncedQuery("");
+        }}
+        listSuggestions={matchingLists}
+        onSelectListSuggestion={(list) => {
+          navigate(`/lists/${list.id}`);
+          setSearchText("");
+          setDebouncedQuery("");
+        }}
         geocodeSuggestions={geocodeQuery.data ?? []}
-        showGeocodeDropdown={debouncedQuery.length >= 2}
+        showSearchDropdown={debouncedQuery.length >= 2}
         geocodeRateLimited={
           geocodeQuery.error instanceof ApiError && geocodeQuery.error.status === 429
         }
@@ -437,7 +557,7 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
               >
                 <GoogleMapsCanvas
                   apiKey={config.googleMapsApiKey}
-                  pois={filteredPois}
+                  pois={pois}
                   pinDropMode={pinDropMode}
                   flyToTarget={flyToTarget}
                   fitBoundsPoints={fitBoundsPoints}
@@ -451,7 +571,7 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
               <MapLibreCanvas
                 styleUrl={config?.defaultMapStyleUrl ?? "https://tiles.openfreemap.org/styles/liberty"}
                 pmtilesUrl={config?.pmtilesUrl ?? null}
-                pois={filteredPois}
+                pois={pois}
                 selectedPoiId={selectedPoiId}
                 pinDropMode={pinDropMode}
                 flyToTarget={flyToTarget}
@@ -478,14 +598,41 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
           )}
         </div>
 
+        {isDesktop && (
+          <aside
+            aria-label="Spot details"
+            aria-hidden={!selectedPoiId}
+            onTransitionEnd={() => {
+              if (!selectedPoiId) {
+                setClosingPoiId(null);
+              }
+            }}
+            className={`absolute right-0 top-0 bottom-0 z-20 flex h-full shrink-0 flex-col overflow-hidden bg-[var(--surface-primary)] transition-[width,transform,opacity] duration-200 ease-out motion-reduce:transition-none lg:static ${
+              selectedPoiId
+                ? "w-[400px] translate-x-0 border-l border-black/10 opacity-100 shadow-xl lg:w-[420px] lg:shadow-none xl:w-[480px] 2xl:w-[540px] dark:border-white/10"
+                : "pointer-events-none w-0 translate-x-full opacity-0 lg:translate-x-0"
+            }`}
+          >
+            {(selectedPoiId ?? closingPoiId) && (
+              <div className="h-full w-[400px] overflow-y-auto p-4 lg:w-[420px] xl:w-[480px] 2xl:w-[540px]">
+                {renderPoiDetail((selectedPoiId ?? closingPoiId) as string, "drawer")}
+              </div>
+            )}
+          </aside>
+        )}
+
         {!isDesktop && (
           <BottomSheet
             snap={sheetSnap}
             onSnapChange={setSheetSnap}
             headerSummary={
               currentTab === "spots"
-                ? `${filteredPois.length} ${filteredPois.length === 1 ? "spot" : "spots"}`
-                : `${lists.length} ${lists.length === 1 ? "list" : "lists"}`
+                ? `${sidebarSpots.length} ${sidebarSpots.length === 1 ? "spot" : "spots"}`
+                : isSharedListRoute
+                  ? sharedList
+                    ? `${sharedList.name} · ${pois.length} ${pois.length === 1 ? "spot" : "spots"}`
+                    : "List"
+                  : `${lists.length} ${lists.length === 1 ? "list" : "lists"}`
             }
           >
             <div className="mb-3 border-b border-black/10 pb-2 dark:border-white/10">{tabBar}</div>

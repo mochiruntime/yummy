@@ -193,7 +193,7 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
 
     expect(screen.queryByRole("group", { name: /filter by lists/i })).not.toBeInTheDocument();
 
-    fireEvent.click(await screen.findByRole("tab", { name: /lists \(3\)/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /^lists$/i }));
 
     const listCollection = await screen.findByRole("list", { name: /curated lists/i });
     expect(within(listCollection).getByText("Bakeries")).toBeInTheDocument();
@@ -204,16 +204,14 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
     expect(within(listCollection).getByText("Bakeries")).toBeInTheDocument();
     expect(within(listCollection).queryByText("Coffee")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^all \(3\)$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^all$/i }));
     fireEvent.click(screen.getByRole("button", { name: /in map area/i }));
     expect(within(listCollection).getByText("Bakeries")).toBeInTheDocument();
     expect(within(listCollection).queryByText("Lisbon Trip")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("searchbox", { name: /filter lists/i }), {
-      target: { value: "bak" },
-    });
-    expect(within(listCollection).getByText("Bakeries")).toBeInTheDocument();
-    expect(within(listCollection).queryByText("Coffee")).not.toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: /filter lists/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add place/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add list/i })).toBeInTheDocument();
 
     fireEvent.click(within(listCollection).getByRole("button", { name: /filter by bakeries/i }));
     await waitFor(() => {
@@ -254,8 +252,9 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Bakeries" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /lists/i })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("link", { name: /all lists/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy share link/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /all spots/i })).toBeInTheDocument();
 
     expect(poiUrls.some((u) => u === `/api/pois?listIds=${LIST_1.id}`)).toBe(true);
     await waitFor(() => {
@@ -300,7 +299,7 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
       return jsonResponse({ error: "Not found" }, 404);
     });
 
-    fireEvent.click(await screen.findByRole("tab", { name: /lists \(2\)/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /^lists$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /add list/i }));
     expect(await screen.findByRole("heading", { name: /manage lists/i })).toBeInTheDocument();
 

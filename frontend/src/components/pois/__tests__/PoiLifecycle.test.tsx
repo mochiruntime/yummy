@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
@@ -334,8 +334,9 @@ describe("POI Creation, Detail, Optimistic Editing & Revision History", () => {
     fireEvent.click(screen.getByRole("button", { name: /make public/i }));
     expect(await screen.findByRole("button", { name: /make friends only/i })).toBeInTheDocument();
 
-    // Remove from owned list Bakeries
-    fireEvent.click(screen.getByRole("button", { name: /bakeries/i }));
+    // Remove from owned list Bakeries inside the right detail sidebar
+    const detailSidebar = screen.getByRole("complementary", { name: /spot details/i });
+    fireEvent.click(within(detailSidebar).getByRole("button", { name: /bakeries/i }));
     await waitFor(() => {
       expect(poi.lists).toHaveLength(0);
     });
@@ -664,5 +665,115 @@ describe("POI Creation, Detail, Optimistic Editing & Revision History", () => {
 
     expect(await screen.findByText(/someone else with the same name/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /delete review/i })).not.toBeInTheDocument();
+  });
+
+  it("opens spot details in the right desktop sidebar while keeping Spots/Lists open and highlighted on the left", async () => {
+    renderWorkspace(async (url) => {
+      if (url === "/api/config") return mockConfigResponse();
+      if (url === "/api/auth/me") return jsonResponse(CREATOR_USER);
+      if (url === "/api/lists") return jsonResponse([OWNED_LIST]);
+      if (url === `/api/pois/${POI_ID}`) return jsonResponse(BASE_POI_DETAIL);
+      if (url.startsWith("/api/pois")) {
+        return jsonResponse([
+          {
+            id: POI_ID,
+            name: BASE_POI_DETAIL.name,
+            address: BASE_POI_DETAIL.address,
+            latitude: BASE_POI_DETAIL.latitude,
+            longitude: BASE_POI_DETAIL.longitude,
+            isPublic: BASE_POI_DETAIL.isPublic,
+            lists: BASE_POI_DETAIL.lists,
+            createdAt: "2026-11-20T12:00:00+00:00",
+          },
+        ]);
+      }
+      return jsonResponse({ error: "Not found" }, 404);
+    });
+
+    // Switch to Lists tab on the left before selecting a spot
+    fireEvent.click(await screen.findByRole("tab", { name: /lists/i }));
+    expect(screen.getByRole("tab", { name: /lists/i })).toHaveAttribute("aria-selected", "true");
+
+    // Simulate clicking the spot directly (e.g. from map marker) via Spots tab
+    fireEvent.click(screen.getByRole("tab", { name: /spots/i }));
+    const spotCard = await screen.findByRole("button", { name: new RegExp(BASE_POI_DETAIL.name, "i") });
+    fireEvent.click(spotCard);
+
+    // Left sidebar remains mounted with aria-current="true" on the active spot
+    expect(spotCard).toHaveAttribute("aria-current", "true");
+
+    // Right sidebar renders PoiDetailPanel with Close spot details button
+    const rightSidebar = screen.getByRole("complementary", { name: /spot details/i });
+    expect(within(rightSidebar).getByRole("button", { name: /close spot details/i })).toBeInTheDocument();
+    expect(await within(rightSidebar).findByText(BASE_POI_DETAIL.description)).toBeInTheDocument();
+
+    // Switching left tab to Lists keeps the right detail sidebar open
+    fireEvent.click(screen.getByRole("tab", { name: /lists/i }));
+    expect(screen.getByRole("tab", { name: /lists/i })).toHaveAttribute("aria-selected", "true");
+    expect(within(rightSidebar).getByText(BASE_POI_DETAIL.description)).toBeInTheDocument();
+
+    // Pressing Escape closes the right sidebar
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => {
+      expect(rightSidebar).toHaveAttribute("aria-hidden", "true");
+    });
+  });
+
+  it("supports In map area, All, and Mine scopes with paginated Load more in SpotsTabPanel", async () => {
+    const requestedUrls: string[] = [];
+    const makePoi = (idx: number, mine: boolean) => ({
+      id: `00000000-0000-7000-8000-${String(idx).padStart(12, "0")}`,
+      createdById: mine ? CREATOR_USER.id : OTHER_USER.id,
+      name: `Spot #${idx}`,
+      address: "Zurich",
+      latitude: 47.37,
+      longitude: 8.54,
+      isPublic: true,
+      version: 1,
+      lists: [],
+    });
+
+    const page1 = Array.from({ length: 30 }, (_, i) => makePoi(i + 1, i === 0));
+    const page2 = [makePoi(31, false)];
+
+    renderWorkspace(async (url) => {
+      if (url === "/api/config") return mockConfigResponse();
+      if (url === "/api/auth/me") return jsonResponse(CREATOR_USER);
+      if (url === "/api/lists") return jsonResponse([OWNED_LIST]);
+      if (url.startsWith("/api/pois")) {
+        requestedUrls.push(url);
+        const params = new URLSearchParams(url.split("?")[1] ?? "");
+        if (params.get("mine") === "1") {
+          return jsonResponse([page1[0]]);
+        }
+        if (params.get("limit") === "30") {
+          return jsonResponse(params.get("offset") === "30" ? page2 : page1);
+        }
+        return jsonResponse([page1[0]]);
+      }
+      return jsonResponse({ error: "Not found" }, 404);
+    });
+
+    // Default scope is "In map area"
+    expect(await screen.findByRole("button", { name: /in map area/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Switch to "All" -> triggers paginated limit=30 fetch and shows Load more
+    fireEvent.click(screen.getByRole("button", { name: /^all$/i }));
+    expect(await screen.findByText("Spot #30")).toBeInTheDocument();
+    const loadMoreBtn = await screen.findByRole("button", { name: /load more/i });
+    fireEvent.click(loadMoreBtn);
+    expect(await screen.findByText("Spot #31")).toBeInTheDocument();
+    expect(requestedUrls.some((u) => u.includes("limit=30") && u.includes("offset=30"))).toBe(true);
+
+    // Switch to "Mine" -> triggers mine=1 query
+    fireEvent.click(screen.getByRole("button", { name: /^mine$/i }));
+    await waitFor(() => {
+      expect(requestedUrls.some((u) => u.includes("mine=1"))).toBe(true);
+    });
+    expect(await screen.findByText("Spot #1")).toBeInTheDocument();
+    expect(screen.queryByText("Spot #31")).not.toBeInTheDocument();
   });
 });

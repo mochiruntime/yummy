@@ -1,8 +1,9 @@
-import { Check, ExternalLink, MapPin, Pencil, Plus, Search } from "lucide-react";
+import { Check, ExternalLink, MapPin, Pencil, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import type { PoiList, PoiSummary, User } from "../../api/types";
 import { sanitizeHexColor } from "../../utils/color";
+import { ScopeSegmentedControl, type ScopeOption } from "../ui/ScopeSegmentedControl";
 import { ListIcon } from "./ListIcon";
 
 export interface ListsTabPanelProps {
@@ -32,7 +33,6 @@ export function ListsTabPanel({
   onCreateList,
   onEditList,
 }: ListsTabPanelProps) {
-  const [query, setQuery] = useState("");
   const [scope, setScope] = useState<ScopeFilter>("all");
 
   const visibleCountByList = useMemo(() => {
@@ -46,7 +46,6 @@ export function ListsTabPanel({
   }, [visiblePois]);
 
   const filteredLists = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return lists.filter((list) => {
       if (scope === "mine" && currentUser && list.ownerId !== currentUser.id) {
         return false;
@@ -54,97 +53,43 @@ export function ListsTabPanel({
       if (scope === "area" && (visibleCountByList.get(list.id) ?? 0) === 0) {
         return false;
       }
-      if (q) {
-        return (
-          list.name.toLowerCase().includes(q) ||
-          list.ownerName.toLowerCase().includes(q)
-        );
-      }
       return true;
     });
-  }, [lists, query, scope, currentUser, visibleCountByList]);
+  }, [lists, scope, currentUser, visibleCountByList]);
+
+  const scopeOptions: ScopeOption<ScopeFilter>[] = useMemo(() => {
+    const opts: ScopeOption<ScopeFilter>[] = [{ value: "all", label: "All" }];
+    if (currentUser) {
+      opts.push({ value: "mine", label: "Mine" });
+    }
+    opts.push({
+      value: "area",
+      label: "In map area",
+      icon: <MapPin aria-hidden="true" className="h-3.5 w-3.5" />,
+    });
+    return opts;
+  }, [currentUser]);
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <Search
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]"
-          />
-          <input
-            type="search"
-            aria-label="Filter lists"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter lists by name or owner…"
-            className="min-h-11 w-full rounded-xl border border-black/15 bg-transparent py-2 pl-9 pr-3 text-sm placeholder:text-[var(--text-muted)] focus:border-[var(--accent-brand)] focus:outline-none dark:border-white/15"
-          />
-        </div>
+      <ScopeSegmentedControl
+        ariaLabel="List filters"
+        options={scopeOptions}
+        value={scope}
+        onChange={setScope}
+      />
 
-        {currentUser && (
-          <button
-            type="button"
-            onClick={onCreateList}
-            aria-label="Add list"
-            className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-xl bg-[var(--accent-brand)] px-3 text-xs font-semibold text-white hover:opacity-90"
-          >
-            <Plus aria-hidden="true" className="h-4 w-4" />
-            Add list
-          </button>
-        )}
-      </div>
-
-      {/* Segmented scope control */}
-      <div
-        role="group"
-        aria-label="List filters"
-        className={`grid gap-1 rounded-xl bg-black/5 p-1 dark:bg-white/5 ${
-          currentUser ? "grid-cols-3" : "grid-cols-2"
-        }`}
-      >
+      {currentUser && (
         <button
           type="button"
-          aria-pressed={scope === "all"}
-          onClick={() => setScope("all")}
-          className={`min-h-11 rounded-lg text-xs font-semibold transition-colors ${
-            scope === "all"
-              ? "bg-[var(--surface-primary)] text-[var(--text-primary)] shadow-xs"
-              : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-          }`}
+          onClick={onCreateList}
+          aria-label="Add list"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-black/20 px-3 text-xs font-semibold text-[var(--text-primary)] hover:border-[var(--accent-brand)] hover:text-[var(--accent-brand)] dark:border-white/20"
         >
-          All ({lists.length})
+          <Plus aria-hidden="true" className="h-4 w-4" />
+          New list
         </button>
-
-        {currentUser && (
-          <button
-            type="button"
-            aria-pressed={scope === "mine"}
-            onClick={() => setScope("mine")}
-            className={`min-h-11 rounded-lg text-xs font-semibold transition-colors ${
-              scope === "mine"
-                ? "bg-[var(--surface-primary)] text-[var(--text-primary)] shadow-xs"
-                : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            }`}
-          >
-            Mine
-          </button>
-        )}
-
-        <button
-          type="button"
-          aria-pressed={scope === "area"}
-          onClick={() => setScope("area")}
-          className={`inline-flex min-h-11 items-center justify-center gap-1 rounded-lg text-xs font-semibold transition-colors ${
-            scope === "area"
-              ? "bg-[var(--surface-primary)] text-[var(--text-primary)] shadow-xs"
-              : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-          }`}
-        >
-          <MapPin aria-hidden="true" className="h-3.5 w-3.5" />
-          In map area
-        </button>
-      </div>
+      )}
 
       {filteredLists.length === 0 ? (
         <p className="rounded-xl border border-dashed border-black/15 py-6 text-center text-sm text-[var(--text-muted)] dark:border-white/15">

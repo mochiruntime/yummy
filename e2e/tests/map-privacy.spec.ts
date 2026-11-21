@@ -28,7 +28,7 @@ test("Journey 4: default MapLibre view loads with zero Google requests and sideb
   await expect(page.getByTestId("maplibre-canvas")).toBeVisible();
 
   await listsTab.click();
-  await expect(page.getByRole("searchbox", { name: /filter lists/i })).toBeVisible();
+  await expect(page.getByRole("group", { name: /list filters/i })).toBeVisible();
 
   expect(googleRequests).toEqual([]);
   expect(workerErrors).toEqual([]);

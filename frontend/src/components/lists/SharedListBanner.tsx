@@ -41,7 +41,7 @@ export function SharedListBanner({
         <p className="font-semibold text-[var(--accent-brand)]">List not found.</p>
         <Link href="/" className="inline-flex min-h-9 items-center gap-1 font-semibold underline">
           <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />
-          Back to all spots
+          Back to all lists
         </Link>
       </div>
     );

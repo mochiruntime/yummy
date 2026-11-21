@@ -236,4 +236,79 @@ describe("MapWorkspace Shell & Geocode Search", () => {
     fireEvent.change(searchInput, { target: { value: "Marais" } });
     expect(await screen.findByText(/too many searches/i)).toBeInTheDocument();
   });
+
+  it("renders heterogeneous global search results for spots, lists, and addresses simultaneously", async () => {
+    const spotId = "11111111-1111-7111-8111-111111111111";
+    const listId = "22222222-2222-7222-8222-222222222222";
+
+    renderShell(async (url) => {
+      if (url === "/api/config") {
+        return jsonResponse({
+          googleMapsEnabled: false,
+          googleMapsApiKey: null,
+          defaultMapStyleUrl: "https://tiles.openfreemap.org/styles/liberty",
+          pmtilesUrl: null,
+          geocoderProvider: "photon",
+          publicBrowsingEnabled: true,
+        });
+      }
+      if (url === "/api/auth/me") return jsonResponse({ error: "Unauthorized" }, 401);
+      if (url === "/api/lists") {
+        return jsonResponse([
+          {
+            id: listId,
+            name: "Croissant Trail",
+            color: "#E11D48",
+            icon: "🥐",
+            isPublic: true,
+            ownerId: "33333333-3333-7333-8333-333333333333",
+            ownerName: "Alex",
+            createdAt: "2026-11-20T00:00:00+00:00",
+          },
+        ]);
+      }
+      if (url.startsWith("/api/pois?") && url.includes("q=Croissant")) {
+        return jsonResponse([
+          {
+            id: spotId,
+            createdById: "33333333-3333-7333-8333-333333333333",
+            name: "Maison Croissant",
+            address: "Rue Oberkampf, Paris",
+            latitude: 48.865,
+            longitude: 2.378,
+            isPublic: true,
+            version: 1,
+            lists: [],
+          },
+        ]);
+      }
+      if (url.startsWith("/api/pois")) return jsonResponse([]);
+      if (url.startsWith("/api/geocode")) {
+        return jsonResponse([
+          {
+            label: "Croissant Street",
+            address: "Lyon, France",
+            latitude: 45.764,
+            longitude: 4.835,
+          },
+        ]);
+      }
+      return jsonResponse({ error: "Not found" }, 404);
+    }, true);
+
+    const searchInput = await screen.findByRole("searchbox", { name: /search places/i });
+    fireEvent.change(searchInput, { target: { value: "Croissant" } });
+
+    const spotsGroup = await screen.findByRole("list", { name: /matching spots/i });
+    const listsGroup = await screen.findByRole("list", { name: /matching lists/i });
+    const addressesGroup = await screen.findByRole("list", { name: /address suggestions/i });
+
+    expect(spotsGroup).toHaveTextContent("Maison Croissant");
+    expect(listsGroup).toHaveTextContent("Croissant Trail");
+    expect(addressesGroup).toHaveTextContent("Croissant Street");
+
+    // Clicking a list suggestion navigates to /lists/:id
+    fireEvent.click(screen.getByRole("button", { name: /croissant trail/i }));
+    expect(await screen.findByRole("heading", { name: "Croissant Trail" })).toBeInTheDocument();
+  });
 });
