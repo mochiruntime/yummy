@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Globe, History, Lock, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Globe, History, Lock, Pencil, Plus, Star, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "../../api/client";
 import { addPoiToList, removePoiFromList } from "../../api/lists";
@@ -377,10 +377,44 @@ export interface PoiDetailPanelProps {
   lists: PoiList[];
   currentUser: User | null;
   isAdmin: boolean;
+  variant?: "inline" | "drawer";
   onBack: () => void;
   onEdit: (detail: PoiDetail) => void;
   onOpenHistory: (detail: PoiDetail) => void;
   onDeleted: (poiId: string) => void;
+}
+
+function DetailHeaderAction({
+  variant,
+  onBack,
+}: {
+  variant: "inline" | "drawer";
+  onBack: () => void;
+}) {
+  if (variant === "drawer") {
+    return (
+      <button
+        type="button"
+        aria-label="Close spot details"
+        onClick={onBack}
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-[var(--text-muted)] hover:bg-black/5 hover:text-[var(--text-primary)] dark:hover:bg-white/10"
+      >
+        <X aria-hidden="true" className="h-4 w-4" />
+        Close
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+    >
+      <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+      Back to spots
+    </button>
+  );
 }
 
 export function PoiDetailPanel({
@@ -388,6 +422,7 @@ export function PoiDetailPanel({
   lists,
   currentUser,
   isAdmin,
+  variant = "inline",
   onBack,
   onEdit,
   onOpenHistory,
@@ -438,14 +473,7 @@ export function PoiDetailPanel({
   if (detailQuery.isPending) {
     return (
       <div className="space-y-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-        >
-          <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-          Back to spots
-        </button>
+        <DetailHeaderAction variant={variant} onBack={onBack} />
         <p className="py-6 text-center text-sm text-[var(--text-muted)]">Loading spot details…</p>
       </div>
     );
@@ -457,14 +485,7 @@ export function PoiDetailPanel({
 
     return (
       <div className="space-y-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-        >
-          <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-          Back to spots
-        </button>
+        <DetailHeaderAction variant={variant} onBack={onBack} />
         <p role="alert" className="rounded-xl border border-black/10 p-4 text-sm text-[var(--text-muted)] dark:border-white/10">
           {isNotFound ? "Spot not found." : "Unable to load spot details."}
         </p>
@@ -479,14 +500,7 @@ export function PoiDetailPanel({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-        >
-          <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-          Back to spots
-        </button>
+        <DetailHeaderAction variant={variant} onBack={onBack} />
         <span className="text-xs font-mono text-[var(--text-muted)]">v{detail.version}</span>
       </div>
 

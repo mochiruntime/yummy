@@ -116,7 +116,7 @@ export function MapLibreCanvas({
       return;
     }
 
-    map.addControl(new NavigationControl({ showCompass: false }), "bottom-right");
+    map.addControl(new NavigationControl({ showCompass: false }), "top-right");
     mapRef.current = map;
 
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
