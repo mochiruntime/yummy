@@ -1,7 +1,7 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Filter, List, MapPin, Plus, X } from "lucide-react";
+import { List, MapPin, Plus } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useSearch } from "wouter";
+import { useLocation } from "wouter";
 import { ApiError } from "../../api/client";
 import { fetchLists, listKeys } from "../../api/lists";
 import { fetchPois, poiKeys, searchGeocode } from "../../api/pois";
@@ -30,17 +30,6 @@ const GoogleMapsCanvas = lazy(() =>
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function parseListIdsParam(searchString: string): string[] {
-  const raw = new URLSearchParams(searchString).get("lists");
-  if (!raw) {
-    return [];
-  }
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter((id) => UUID_RE.test(id));
-}
-
 export interface MapWorkspaceProps {
   sharedListId?: string;
   selectedPoiRouteId?: string;
@@ -50,15 +39,14 @@ export interface MapWorkspaceProps {
 export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }: MapWorkspaceProps) {
   const { config, user, isAdmin, signOut } = useAuth();
   const isDesktop = useIsDesktop();
-  const searchString = useSearch();
   const [, navigate] = useLocation();
 
   const isSharedListRoute = Boolean(sharedListId);
   const isValidSharedListId = Boolean(sharedListId && UUID_RE.test(sharedListId));
 
   const selectedListIds = useMemo(
-    () => (sharedListId ? (isValidSharedListId ? [sharedListId] : []) : parseListIdsParam(searchString)),
-    [sharedListId, isValidSharedListId, searchString],
+    () => (sharedListId && isValidSharedListId ? [sharedListId] : []),
+    [sharedListId, isValidSharedListId],
   );
 
   const [activeTab, setActiveTab] = useState<"spots" | "lists">("spots");
@@ -104,34 +92,6 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
     }, 300);
     return () => clearTimeout(timer);
   }, [searchText]);
-
-  const setListIdsInUrl = useCallback(
-    (nextIds: string[]) => {
-      const params = new URLSearchParams(searchString);
-      if (nextIds.length > 0) {
-        params.set("lists", nextIds.join(","));
-      } else {
-        params.delete("lists");
-      }
-      const qs = params.toString();
-      navigate(qs ? `/?${qs}` : "/", { replace: true });
-    },
-    [navigate, searchString],
-  );
-
-  const toggleListFilter = useCallback(
-    (id: string) => {
-      if (isSharedListRoute) {
-        navigate(`/?lists=${encodeURIComponent(id)}`);
-        return;
-      }
-      const next = selectedListIds.includes(id)
-        ? selectedListIds.filter((item) => item !== id)
-        : [...selectedListIds, id];
-      setListIdsInUrl(next);
-    },
-    [isSharedListRoute, navigate, selectedListIds, setListIdsInUrl],
-  );
 
   const listsQuery = useQuery({
     queryKey: listKeys.all,
@@ -326,16 +286,6 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
     setConsentModalOpen(true);
   };
 
-  const activeFilterSummary = useMemo(() => {
-    if (isSharedListRoute || selectedListIds.length === 0) {
-      return null;
-    }
-    if (selectedListIds.length === 1) {
-      return lists.find((l) => l.id === selectedListIds[0])?.name ?? "1 list";
-    }
-    return `${selectedListIds.length} lists`;
-  }, [isSharedListRoute, selectedListIds, lists]);
-
   const currentTab = isSharedListRoute ? "lists" : activeTab;
 
   const tabBar = (
@@ -450,10 +400,8 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
       <ListsTabPanel
         lists={lists}
         visiblePois={pois}
-        selectedListIds={selectedListIds}
         currentUser={user}
         isAdmin={isAdmin}
-        onToggleListFilter={toggleListFilter}
         onCreateList={() => {
           setEditingList(null);
           setListManagerOpen(true);
@@ -525,21 +473,6 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
         )}
 
         <div className="relative flex-1">
-          {activeFilterSummary && (
-            <div className="pointer-events-none absolute left-3 top-3 z-20">
-              <button
-                type="button"
-                onClick={() => setListIdsInUrl([])}
-                aria-label={`Clear list filter: ${activeFilterSummary}`}
-                className="pointer-events-auto inline-flex min-h-11 items-center gap-1.5 rounded-full bg-[var(--accent-brand)] px-3.5 text-xs font-semibold text-white shadow-md hover:opacity-90"
-              >
-                <Filter aria-hidden="true" className="h-3.5 w-3.5" />
-                <span>{activeFilterSummary}</span>
-                <X aria-hidden="true" className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-
           <ErrorBoundary
             fallback={
               <div className="flex h-full w-full items-center justify-center px-4 text-sm text-[var(--text-muted)]">
@@ -653,13 +586,10 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
 
         {listManagerOpen && user && (
           <ListManagerModal
-            lists={lists}
-            currentUser={user}
-            isAdmin={isAdmin}
             initialEditList={editingList}
             onListDeleted={(deletedId) => {
-              if (selectedListIds.includes(deletedId)) {
-                setListIdsInUrl(selectedListIds.filter((id) => id !== deletedId));
+              if (sharedListId === deletedId) {
+                navigate("/");
               }
             }}
             onClose={() => {

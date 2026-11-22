@@ -165,9 +165,7 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
     fitBoundsMock.mockClear();
   });
 
-  it("browses, searches, and filters lists in the Lists tab and shows compact map filter chip", async () => {
-    const poiUrls: string[] = [];
-
+  it("browses, scope-filters, and opens lists directly from the Lists tab without filter pills", async () => {
     renderListsWorkspace(async (url) => {
       if (url === "/api/config") {
         return jsonResponse({
@@ -182,11 +180,7 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
       if (url === "/api/auth/me") return jsonResponse(MEMBER_USER);
       if (url === "/api/lists") return jsonResponse([LIST_1, LIST_2, LIST_3]);
       if (url.startsWith("/api/pois")) {
-        poiUrls.push(url);
-        const params = new URLSearchParams(url.split("?")[1] ?? "");
-        const listIds = params.get("listIds")?.split(",") ?? [];
-        if (listIds.length === 0) return jsonResponse(POIS);
-        return jsonResponse(POIS.filter((p) => p.lists.some((l) => listIds.includes(l.id))));
+        return jsonResponse(POIS);
       }
       return jsonResponse({ error: "Not found" }, 404);
     });
@@ -200,6 +194,14 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
     expect(within(listCollection).getByText("Coffee")).toBeInTheDocument();
     expect(within(listCollection).getByText("Lisbon Trip")).toBeInTheDocument();
 
+    expect(within(listCollection).getByRole("link", { name: /open bakeries/i })).toHaveAttribute(
+      "href",
+      `/lists/${LIST_1.id}`,
+    );
+    expect(within(listCollection).getByRole("button", { name: /edit bakeries/i })).toBeInTheDocument();
+    expect(within(listCollection).queryByRole("button", { name: /edit coffee/i })).not.toBeInTheDocument();
+    expect(within(listCollection).queryByRole("button", { name: /filter by/i })).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: /^mine$/i }));
     expect(within(listCollection).getByText("Bakeries")).toBeInTheDocument();
     expect(within(listCollection).queryByText("Coffee")).not.toBeInTheDocument();
@@ -212,16 +214,6 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
     expect(screen.queryByRole("searchbox", { name: /filter lists/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add place/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add list/i })).toBeInTheDocument();
-
-    fireEvent.click(within(listCollection).getByRole("button", { name: /filter by bakeries/i }));
-    await waitFor(() => {
-      expect(poiUrls.some((u) => u.includes(`listIds=${LIST_1.id}`))).toBe(true);
-    });
-
-    const clearChip = await screen.findByRole("button", {
-      name: /clear list filter: bakeries/i,
-    });
-    fireEvent.click(clearChip);
     expect(screen.queryByRole("button", { name: /clear list filter/i })).not.toBeInTheDocument();
   });
 
@@ -262,7 +254,7 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
     });
   });
 
-  it("enforces list ownership in ListManagerModal and supports creating a new list", async () => {
+  it("creates a single list in Create List mode with offline emoji picker and flag search", async () => {
     let lists = [LIST_1, LIST_2];
     const postedIcons: string[] = [];
 
@@ -301,16 +293,61 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
 
     fireEvent.click(await screen.findByRole("tab", { name: /^lists$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /add list/i }));
-    expect(await screen.findByRole("heading", { name: /manage lists/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /create list/i })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: /existing lists/i })).not.toBeInTheDocument();
 
-    expect(screen.getByRole("button", { name: /edit list bakeries/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /edit list coffee/i })).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText(/list name/i), { target: { value: "Ramen" } });
-    fireEvent.click(screen.getByRole("button", { name: "Select emoji 🍜" }));
+    fireEvent.change(screen.getByLabelText(/list name/i), { target: { value: "Portugal" } });
+    fireEvent.change(screen.getByRole("searchbox", { name: /search emojis/i }), {
+      target: { value: "portugal" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Select emoji 🇵🇹" }));
     fireEvent.click(screen.getByRole("button", { name: /create list/i }));
 
-    expect((await screen.findAllByText("Ramen")).length).toBeGreaterThan(0);
-    expect(postedIcons).toEqual(["🍜"]);
+    expect((await screen.findAllByText("Portugal")).length).toBeGreaterThan(0);
+    expect(postedIcons).toEqual(["🇵🇹"]);
+  });
+
+  it("edits and deletes a single list with inline delete confirmation", async () => {
+    let lists = [LIST_1, LIST_2];
+    const deletedIds: string[] = [];
+
+    renderListsWorkspace(async (url, init) => {
+      if (url === "/api/config") {
+        return jsonResponse({
+          googleMapsEnabled: false,
+          googleMapsApiKey: null,
+          defaultMapStyleUrl: "https://tiles.openfreemap.org/styles/liberty",
+          pmtilesUrl: null,
+          geocoderProvider: "photon",
+          publicBrowsingEnabled: true,
+        });
+      }
+      if (url === "/api/auth/me") return jsonResponse(MEMBER_USER);
+      if (url === "/api/lists" && (!init?.method || init.method === "GET")) {
+        return jsonResponse(lists);
+      }
+      if (url === `/api/lists/${LIST_1.id}` && init?.method === "DELETE") {
+        deletedIds.push(LIST_1.id);
+        lists = lists.filter((l) => l.id !== LIST_1.id);
+        return new Response(null, { status: 204 });
+      }
+      if (url.startsWith("/api/pois")) return jsonResponse(POIS);
+      return jsonResponse({ error: "Not found" }, 404);
+    });
+
+    fireEvent.click(await screen.findByRole("tab", { name: /^lists$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /edit bakeries/i }));
+    expect(await screen.findByRole("heading", { name: /edit list/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save changes/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /delete list/i }));
+    expect(screen.queryByRole("button", { name: /save changes/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/delete this list\? spots stay on the map\./i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
+    await waitFor(() => {
+      expect(deletedIds).toEqual([LIST_1.id]);
+    });
+    expect(screen.queryByRole("heading", { name: /edit list/i })).not.toBeInTheDocument();
   });
 });
