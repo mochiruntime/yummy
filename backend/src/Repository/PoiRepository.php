@@ -48,15 +48,17 @@ class PoiRepository extends ServiceEntityRepository
         int $offset = 0,
     ): array {
         $qb = $this->createQueryBuilder('p')
-            ->leftJoin('p.lists', 'l')
-            ->addSelect('l')
             ->orderBy('p.createdAt', 'DESC')
             ->addOrderBy('p.id', 'DESC');
 
-        // Unauthenticated guests may only view POIs explicitly marked as public by their creators.
-        // Authenticated members are permitted to view both public POIs and instance-private POIs.
         if ($isGuest) {
-            $qb->andWhere('p.isPublic = true');
+            // Guests only see public lists attached to public POIs and cannot filter by private list IDs.
+            $qb->leftJoin('p.lists', 'l', 'WITH', 'l.isPublic = true')
+                ->addSelect('l')
+                ->andWhere('p.isPublic = true');
+        } else {
+            $qb->leftJoin('p.lists', 'l')
+                ->addSelect('l');
         }
 
         if ($mineAuthor !== null) {

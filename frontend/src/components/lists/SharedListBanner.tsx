@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Copy } from "lucide-react";
+import { ArrowLeft, Check, Copy, Globe, Lock, Pencil } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 import type { PoiList } from "../../api/types";
@@ -10,16 +10,20 @@ export interface SharedListBannerProps {
   isLoading: boolean;
   spotCount: number;
   isAuthenticated: boolean;
+  canEdit?: boolean;
+  onEdit?: (list: PoiList) => void;
 }
 
 /**
- * Header banner rendered in the Spots tab when viewing a shareable `/lists/:id` URL.
+ * Header banner rendered in the Lists tab when viewing a shareable `/lists/:id` URL.
  */
 export function SharedListBanner({
   list,
   isLoading,
   spotCount,
   isAuthenticated,
+  canEdit = false,
+  onEdit,
 }: SharedListBannerProps) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
@@ -75,11 +79,35 @@ export function SharedListBanner({
             </p>
           </div>
         </div>
+
+        {isAuthenticated && (
+          <span
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              list.isPublic
+                ? "bg-[var(--vis-public)]/15 text-[var(--vis-public)]"
+                : "bg-[var(--vis-private)]/15 text-[var(--vis-private)]"
+            }`}
+          >
+            {list.isPublic ? (
+              <>
+                <Globe aria-hidden="true" className="h-3 w-3" />
+                Public
+              </>
+            ) : (
+              <>
+                <Lock aria-hidden="true" className="h-3 w-3" />
+                Friends Only
+              </>
+            )}
+          </span>
+        )}
       </div>
 
       {isAuthenticated && (
         <p className="text-[11px] text-[var(--text-muted)]">
-          Guests opening this link will only see Public spots in this list.
+          {list.isPublic
+            ? "Guests opening this link will only see Public spots in this list."
+            : "Friends Only list — guests cannot view this link."}
         </p>
       )}
 
@@ -108,13 +136,17 @@ export function SharedListBanner({
           )}
         </button>
 
-        <Link
-          href="/"
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-black/10 px-3 text-xs font-semibold hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
-        >
-          <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />
-          All spots
-        </Link>
+        {canEdit && onEdit && (
+          <button
+            type="button"
+            onClick={() => onEdit(list)}
+            aria-label={`Edit ${list.name}`}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-black/10 px-3 text-xs font-semibold hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+          >
+            <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
+            Edit
+          </button>
+        )}
       </div>
     </div>
   );

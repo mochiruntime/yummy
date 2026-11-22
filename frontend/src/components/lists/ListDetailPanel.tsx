@@ -12,6 +12,8 @@ export interface ListDetailPanelProps {
   isPoisLoading: boolean;
   selectedPoiId: string | null;
   isAuthenticated: boolean;
+  canEdit?: boolean;
+  onEditList?: (list: PoiList) => void;
   onSelectPoi: (poi: PoiSummary) => void;
 }
 
@@ -26,6 +28,8 @@ export function ListDetailPanel({
   isPoisLoading,
   selectedPoiId,
   isAuthenticated,
+  canEdit = false,
+  onEditList,
   onSelectPoi,
 }: ListDetailPanelProps) {
   return (
@@ -43,6 +47,8 @@ export function ListDetailPanel({
         isLoading={isValidSharedListId && isListsLoading}
         spotCount={pois.length}
         isAuthenticated={isAuthenticated}
+        canEdit={canEdit}
+        onEdit={onEditList}
       />
 
       {isPoisLoading && pois.length === 0 && (

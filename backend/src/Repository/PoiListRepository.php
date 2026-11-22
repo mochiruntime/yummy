@@ -21,12 +21,16 @@ class PoiListRepository extends ServiceEntityRepository
     }
 
     /**
-     * Retrieves all curated lists ordered alphabetically by list name.
+     * Retrieves curated lists ordered alphabetically by list name.
+     *
+     * @param bool $publicOnly When true, restricts results to lists marked public
      *
      * @return list<PoiList>
      */
-    public function findAllOrderedByName(): array
+    public function findAllOrderedByName(bool $publicOnly = false): array
     {
-        return $this->findBy([], ['name' => 'ASC']);
+        $criteria = $publicOnly ? ['isPublic' => true] : [];
+
+        return $this->findBy($criteria, ['name' => 'ASC']);
     }
 }

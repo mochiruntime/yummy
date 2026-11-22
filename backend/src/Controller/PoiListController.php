@@ -35,14 +35,18 @@ use Symfony\Component\Uid\Uuid;
 final class PoiListController extends AbstractController
 {
     /**
-     * Lists all curated POI lists/categories in alphabetical order.
+     * Lists curated POI lists/categories in alphabetical order.
+     * Unauthenticated guests only receive lists marked public.
      *
      * @param PoiListRepository $lists List repository
+     * @param User|null         $user  Authenticated user or null for guests
      */
     #[Route('/api/lists', name: 'api_lists_list', methods: ['GET'])]
-    public function index(PoiListRepository $lists): JsonResponse
-    {
-        $all = $lists->findAllOrderedByName();
+    public function index(
+        PoiListRepository $lists,
+        #[CurrentUser] ?User $user = null,
+    ): JsonResponse {
+        $all = $lists->findAllOrderedByName($user === null);
 
         return $this->json($all, context: ['groups' => ['list:read']]);
     }
@@ -61,7 +65,7 @@ final class PoiListController extends AbstractController
         #[CurrentUser] User $user,
         EntityManagerInterface $em,
     ): JsonResponse {
-        $list = new PoiList($user, $dto->name, $dto->color, $dto->icon);
+        $list = new PoiList($user, $dto->name, $dto->color, $dto->icon, $dto->isPublic);
 
         $em->persist($list);
         $em->flush();
@@ -99,6 +103,7 @@ final class PoiListController extends AbstractController
 
         $list->setColor($dto->color);
         $list->setIcon($dto->icon);
+        $list->setIsPublic($dto->isPublic);
 
         $em->flush();
 

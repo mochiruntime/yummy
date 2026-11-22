@@ -91,12 +91,15 @@ final class PoiLifecycleTest extends WebTestCase
         $creator = new User('creator@yummy.test', 'Creator');
         $this->em->persist($creator);
 
-        $list = new PoiList($creator, 'Paris Cafe', '#123456', 'coffee');
+        $list = new PoiList($creator, 'Paris Cafe', '#123456', 'coffee', true);
+        $privateList = new PoiList($creator, 'Secret Cafe', '#654321', 'lock', false);
         $this->em->persist($list);
+        $this->em->persist($privateList);
 
         // Paris coordinate: 48.8566, 2.3522
         $parisPoi = new Poi($creator, 'Parisian Cafe', 48.8566, 2.3522, null, null, true);
         $parisPoi->addList($list);
+        $parisPoi->addList($privateList);
 
         // Tokyo coordinate: 35.6762, 139.6503
         $tokyoPoi = new Poi($creator, 'Tokyo Ramen', 35.6762, 139.6503, null, null, true);
@@ -113,13 +116,29 @@ final class PoiLifecycleTest extends WebTestCase
         self::assertCount(1, $data);
         self::assertSame('Parisian Cafe', $data[0]['name']);
 
-        // Filter by listId
+        // Filter by public listId as guest -> returns POI, with only public list exposed
         $this->client->request('GET', '/api/pois?listIds='.$list->getId()->toRfc4122());
         self::assertResponseIsSuccessful();
         $dataList = json_decode((string) $this->client->getResponse()->getContent(), true);
         self::assertIsArray($dataList);
         self::assertCount(1, $dataList);
         self::assertSame('Parisian Cafe', $dataList[0]['name']);
+        self::assertCount(1, $dataList[0]['lists']);
+        self::assertSame('Paris Cafe', $dataList[0]['lists'][0]['name']);
+
+        // Filter by private listId as guest -> returns empty
+        $this->client->request('GET', '/api/pois?listIds='.$privateList->getId()->toRfc4122());
+        self::assertResponseIsSuccessful();
+        $privateDataList = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertSame([], $privateDataList);
+
+        // Detail endpoint as guest -> only public list is included on the public POI
+        $this->client->request('GET', '/api/pois/'.$parisPoi->getId()->toRfc4122());
+        self::assertResponseIsSuccessful();
+        $detail = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertIsArray($detail);
+        self::assertCount(1, $detail['lists']);
+        self::assertSame('Paris Cafe', $detail['lists'][0]['name']);
 
         // Invalid bbox
         $this->client->request('GET', '/api/pois?bbox=invalid');

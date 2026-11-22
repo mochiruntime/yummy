@@ -47,6 +47,14 @@ final class PoiDetailAssembler
         /** @var array<string, mixed> $base */
         $base = $this->normalizer->normalize($poi, 'json', ['groups' => ['poi:read']]);
 
+        // Ensure unauthenticated guests never see private (Friends Only) lists attached to a public POI.
+        if ($isGuest && is_array($base['lists'] ?? null)) {
+            $base['lists'] = array_values(array_filter(
+                $base['lists'],
+                static fn (mixed $list): bool => is_array($list) && ($list['isPublic'] ?? false) === true,
+            ));
+        }
+
         $visibleReviews = $this->reviews->findVisibleForPoi($poi, $isGuest);
         /** @var list<array<string, mixed>> $normalizedReviews */
         $normalizedReviews = $this->normalizer->normalize(

@@ -394,6 +394,11 @@ export function MapWorkspace({ sharedListId, selectedPoiRouteId, onOpenSignIn }:
         isPoisLoading={poisQuery.isPending}
         selectedPoiId={selectedPoiId}
         isAuthenticated={user !== null}
+        canEdit={Boolean(user && sharedList && (isAdmin || sharedList.ownerId === user.id))}
+        onEditList={(list) => {
+          setEditingList(list);
+          setListManagerOpen(true);
+        }}
         onSelectPoi={handleSelectPoi}
       />
     ) : (

@@ -1000,12 +1000,15 @@ components:
           type: string
         icon:
           type: string
+        isPublic:
+          type: boolean
+          default: false
 
     PoiList:
       allOf:
         - $ref: "#/components/schemas/PoiListInput"
         - type: object
-          required: [id, ownerId, ownerName]
+          required: [id, ownerId, ownerName, isPublic]
           properties:
             id:
               type: string

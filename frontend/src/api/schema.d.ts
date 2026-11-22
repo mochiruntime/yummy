@@ -606,6 +606,8 @@ export interface components {
             name: string;
             color?: string;
             icon?: string;
+            /** @default false */
+            isPublic: boolean;
         };
         PoiList: components["schemas"]["PoiListInput"] & {
             /** Format: uuid */

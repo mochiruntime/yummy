@@ -73,29 +73,45 @@ final class PoiListTest extends WebTestCase
         self::assertArrayNotHasKey('slug', $data);
         self::assertSame('#ff5722', $data['color']);
         self::assertSame('ramen', $data['icon']);
+        self::assertFalse($data['isPublic']);
         self::assertSame($user->getId()->toRfc4122(), $data['ownerId']);
         self::assertSame('List Owner', $data['ownerName']);
     }
 
-    public function testGetListsOrderedByName(): void
+    public function testGetListsOrderedByNameAndRespectsGuestVisibility(): void
     {
         $user = new User('owner@yummy.test', 'List Owner');
         $this->em->persist($user);
 
-        $listZ = new PoiList($user, 'Zebra Cafe', '#333333', 'coffee');
-        $listA = new PoiList($user, 'Apple Bakery', '#ff0000', 'bakery');
+        $listZ = new PoiList($user, 'Zebra Cafe', '#333333', 'coffee', true);
+        $listA = new PoiList($user, 'Apple Bakery', '#ff0000', 'bakery', true);
+        $listPrivate = new PoiList($user, 'Secret Spots', '#111111', 'lock', false);
         $this->em->persist($listZ);
         $this->em->persist($listA);
+        $this->em->persist($listPrivate);
         $this->em->flush();
 
+        // Guest only sees public lists
         $this->client->request('GET', '/api/lists');
         self::assertResponseIsSuccessful();
 
-        $data = json_decode((string) $this->client->getResponse()->getContent(), true);
-        self::assertIsArray($data);
-        self::assertCount(2, $data);
-        self::assertSame('Apple Bakery', $data[0]['name']);
-        self::assertSame('Zebra Cafe', $data[1]['name']);
+        $guestData = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertIsArray($guestData);
+        self::assertCount(2, $guestData);
+        self::assertSame('Apple Bakery', $guestData[0]['name']);
+        self::assertTrue($guestData[0]['isPublic']);
+        self::assertSame('Zebra Cafe', $guestData[1]['name']);
+
+        // Authenticated member sees all lists (public + friends-only)
+        $this->client->loginUser($user);
+        $this->client->request('GET', '/api/lists');
+        self::assertResponseIsSuccessful();
+
+        $memberData = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertIsArray($memberData);
+        self::assertCount(3, $memberData);
+        self::assertSame('Secret Spots', $memberData[1]['name']);
+        self::assertFalse($memberData[1]['isPublic']);
     }
 
     public function testUpdateListOnlyOwnerOrAdmin(): void

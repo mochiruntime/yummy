@@ -29,4 +29,9 @@ final class PoiListInputDto
      */
     #[Assert\Length(max: 32)]
     public string $icon = '📍';
+
+    /**
+     * Whether the list is visible to unauthenticated guests when public browsing is enabled.
+     */
+    public bool $isPublic = false;
 }

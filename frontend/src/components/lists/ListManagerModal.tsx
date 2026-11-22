@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Globe, Lock, Plus, Save, Trash2 } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { ApiError } from "../../api/client";
 import { createList, deleteList, listKeys, updateList } from "../../api/lists";
@@ -40,6 +40,7 @@ export function ListManagerModal({
     initialEditList ? sanitizeHexColor(initialEditList.color) : COLOR_PRESETS[0],
   );
   const [icon, setIcon] = useState<string>(initialEditList?.icon?.trim() || "📍");
+  const [isPublic, setIsPublic] = useState(initialEditList?.isPublic ?? false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const invalidateAll = () => {
@@ -71,7 +72,7 @@ export function ListManagerModal({
     if (!trimmed) {
       return;
     }
-    saveMutation.mutate({ name: trimmed, color, icon });
+    saveMutation.mutate({ name: trimmed, color, icon, isPublic });
   };
 
   const mutationError =
@@ -133,6 +134,27 @@ export function ListManagerModal({
         </div>
 
         <EmojiPicker value={icon} onChange={setIcon} />
+
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-black/10 px-3 py-2.5 dark:border-white/10">
+          <div className="flex items-center gap-2 text-xs">
+            {isPublic ? (
+              <Globe aria-hidden="true" className="h-4 w-4 text-[var(--vis-public)]" />
+            ) : (
+              <Lock aria-hidden="true" className="h-4 w-4 text-[var(--vis-private)]" />
+            )}
+            <span className="font-medium">{isPublic ? "Public" : "Friends Only"}</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isPublic}
+            aria-label="Toggle public visibility"
+            onClick={() => setIsPublic((v) => !v)}
+            className="min-h-9 rounded-lg border border-black/15 px-3 text-xs font-semibold hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+          >
+            {isPublic ? "Make Friends Only" : "Make Public"}
+          </button>
+        </div>
 
         {mutationError && (
           <p role="alert" className="text-xs text-[var(--accent-brand)]">

@@ -61,6 +61,15 @@ class PoiList
     private string $icon;
 
     /**
+     * Visibility flag. False = private to instance members; True = public to all visitors (when public browsing is enabled).
+     * Stored as BOOLEAN (TINYINT(1)), non-null, defaults to false (Friends Only).
+     */
+    #[ORM\Column(name: 'is_public', type: Types::BOOLEAN)]
+    #[Groups(['list:read', 'poi:read', 'poi:summary'])]
+    #[SerializedName('isPublic')]
+    private bool $isPublic = false;
+
+    /**
      * POIs contained within this list.
      *
      * @var Collection<int, Poi>
@@ -79,18 +88,25 @@ class PoiList
     /**
      * Creates a new POI list instance.
      *
-     * @param User   $owner List owner
-     * @param string $name  Display name
-     * @param string $color Hex color code (#rrggbb)
-     * @param string $icon  Icon identifier string
+     * @param User   $owner    List owner
+     * @param string $name     Display name
+     * @param string $color    Hex color code (#rrggbb)
+     * @param string $icon     Icon identifier string
+     * @param bool   $isPublic Whether the list is visible to unauthenticated guests
      */
-    public function __construct(User $owner, string $name, string $color = '#E11D48', string $icon = 'bookmark')
-    {
+    public function __construct(
+        User $owner,
+        string $name,
+        string $color = '#E11D48',
+        string $icon = 'bookmark',
+        bool $isPublic = false,
+    ) {
         $this->id = Uuid::v7();
         $this->owner = $owner;
         $this->name = trim($name);
         $this->color = trim($color);
         $this->icon = trim($icon);
+        $this->isPublic = $isPublic;
         $this->pois = new ArrayCollection();
         $this->createdAt = new \DateTimeImmutable();
     }
@@ -177,6 +193,22 @@ class PoiList
     public function setIcon(string $icon): void
     {
         $this->icon = trim($icon);
+    }
+
+    /**
+     * Returns whether this list is publicly visible to unauthenticated visitors.
+     */
+    public function isPublic(): bool
+    {
+        return $this->isPublic;
+    }
+
+    /**
+     * Sets whether this list is publicly visible to unauthenticated visitors.
+     */
+    public function setIsPublic(bool $isPublic): void
+    {
+        $this->isPublic = $isPublic;
     }
 
     /**

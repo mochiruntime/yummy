@@ -246,12 +246,47 @@ describe("Lists Discovery, CRUD & Shareable View", () => {
     expect(await screen.findByRole("heading", { name: "Bakeries" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /lists/i })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("link", { name: /all lists/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /all spots/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /edit bakeries/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy share link/i })).toBeInTheDocument();
 
     expect(poiUrls.some((u) => u === `/api/pois?listIds=${LIST_1.id}`)).toBe(true);
     await waitFor(() => {
       expect(fitBoundsMock).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("shows Edit button on /lists/:id for list owner and opens Edit List modal", async () => {
+    renderListsWorkspace(
+      async (url) => {
+        if (url === "/api/config") {
+          return jsonResponse({
+            googleMapsEnabled: false,
+            googleMapsApiKey: null,
+            defaultMapStyleUrl: "https://tiles.openfreemap.org/styles/liberty",
+            pmtilesUrl: null,
+            geocoderProvider: "photon",
+            publicBrowsingEnabled: true,
+          });
+        }
+        if (url === "/api/auth/me") return jsonResponse(MEMBER_USER);
+        if (url === "/api/lists") return jsonResponse([LIST_1, LIST_2]);
+        if (url.startsWith("/api/pois")) return jsonResponse(POIS);
+        return jsonResponse({ error: "Not found" }, 404);
+      },
+      `/lists/${LIST_1.id}`,
+    );
+
+    const editBtn = await screen.findByRole("button", { name: /edit bakeries/i });
+    expect(screen.getAllByText(/^friends only$/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/guests cannot view this link/i)).toBeInTheDocument();
+
+    fireEvent.click(editBtn);
+    expect(await screen.findByRole("heading", { name: /edit list/i })).toBeInTheDocument();
+    const visibilitySwitch = screen.getByRole("switch", { name: /toggle public visibility/i });
+    expect(visibilitySwitch).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(visibilitySwitch);
+    expect(visibilitySwitch).toHaveAttribute("aria-checked", "true");
   });
 
   it("creates a single list in Create List mode with offline emoji picker and flag search", async () => {
